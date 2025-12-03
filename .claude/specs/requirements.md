@@ -1,17 +1,18 @@
-# ProcAgent Requirements Document
+# ProcAgent Requirements Document (MVP Demo)
 
 ## Introduction
 
-ProcAgent is an AI copilot designed to assist junior chemical/process engineers in using ProMax, a Windows-based process simulation software. Built primarily on the **ProMax COM API** for reliable programmatic control, ProcAgent aims to lower the barrier to entry for engineers new to the industry by automating workflow creation from Process Flow Diagrams (PFDs), intelligently populating block parameters, optimizing configurations to meet operational targets, and providing educational explanations throughout the process.
+ProcAgent is an AI copilot designed to assist junior chemical/process engineers in using ProMax, a Windows-based process simulation software. Built primarily on the **ProMax COM API** for reliable programmatic control, ProcAgent aims to lower the barrier to entry for engineers new to the industry by automating workflow creation from Process Flow Diagrams (PFDs), intelligently populating block parameters, and providing simulation execution with target comparison.
 
-**Architecture:** ProcAgent is delivered as a web-based SaaS application. Users access the system through a web browser, while ProMax runs on backend sandbox servers managed by the ProcAgent service. This architecture ensures that corporate users can utilize ProcAgent without needing to install any software on their work laptops, addressing common IT policy restrictions in enterprise environments.
+**MVP Architecture:** ProcAgent is a **single-PC local demo** application. The user runs a web browser on the same Windows PC where ProMax, the backend server, TightVNC, and all components run. This is NOT a multi-user SaaS deployment - it is a demonstration environment for investor/user presentations.
 
 **Technical Approach:**
-- **ProMax COM API (Primary):** The system uses the ProMax COM API as the primary mechanism for all ProMax interactions - creating blocks, setting parameters, running simulations, and reading results. This provides reliable, efficient, and deterministic programmatic control.
-- **TightVNC (Visibility):** Users can see what is happening on the backend ProMax instance via TightVNC streaming. This enables visual monitoring and allows users to intervene when needed.
-- **Claude Computer Use Agent (Fallback):** For edge cases where the COM API cannot accomplish a specific task, Claude's native computer use capabilities (CUA with coordinate-based interactions) can be used as a fallback mechanism for GUI automation.
+- **Claude Agent SDK:** Central orchestrator (`pip install claude-agent-sdk`) managing all AI interactions
+- **ProMax COM API (Primary):** The system uses the ProMax COM API as the primary mechanism for all ProMax interactions - creating blocks, setting parameters, running simulations, and reading results
+- **TightVNC (Visibility):** A single TightVNC service with a fixed port and password streams the ProMax window to the browser via noVNC, allowing the user to see what is happening
+- **Claude Computer Use (Fallback):** For edge cases where the COM API cannot accomplish a specific task, Claude's native computer use capabilities (CUA with coordinate-based interactions) can be used as a fallback mechanism
 
-This MVP focuses on ProMax integration only and targets investor/user demonstrations. The system provides a user-friendly browser-based chat interface with live TightVNC streaming of the backend ProMax sandbox, enabling human-in-the-loop control where users can visually monitor, pause, intervene, and resume AI operations.
+This MVP focuses on ProMax integration only and targets investor/user demonstrations on a single Windows PC.
 
 ---
 
@@ -48,14 +49,15 @@ For the 1-month MVP demo timeline, ProcAgent will demonstrate capabilities using
 
 ### Demo Flow
 
-1. User uploads PFD image and circles the Amine Treater (301-E), or describes it via chat
-2. System uses multimodal AI to identify the highlighted block as an Amine Treater column
-3. System creates single Amine Treater column in ProMax
-4. User provides stream data for parameter population
-5. System runs simulation and displays results
-6. System compares results to performance targets
-7. If targets not met, system suggests parameter adjustments
-8. User can manually request another run with adjusted parameters
+1. User opens the web app in their browser (same PC as backend)
+2. User describes a process block via chat OR uploads a PFD image and describes which block to focus on
+3. System uses multimodal AI to understand the block type (e.g., Amine Treater column)
+4. System creates single Amine Treater column in ProMax via COM API
+5. User provides stream data for parameter population
+6. System runs simulation and displays results
+7. System compares results to performance targets
+8. If targets not met, system suggests parameter adjustments
+9. User can manually request another run with adjusted parameters
 
 ---
 
@@ -67,10 +69,10 @@ These features are essential for the 1-month demo timeline:
 
 | Requirement | Scope for Demo |
 |-------------|----------------|
-| Req 1: Single Block Creation from PFD or Chat | User uploads PFD image and highlights block OR describes via chat. AI uses multimodal vision to identify block type from image. Creates ONE block (e.g., Amine Treater) in ProMax. NOT full PFD interpretation of all blocks. |
-| Req 2: Parameter Population | Fill parameters based on user-provided inlet stream data. Simplified approach without smart inference. |
-| Req 3: Single Simulation Run | Run simulation once, display results, compare to targets. Defer multi-iteration optimization. |
-| Req 5: Chat + Streaming UI | Basic functional chat interface with live ProMax streaming view. |
+| Req 1: Single Block Creation from Chat or PFD | User describes block via chat OR uploads PFD image with description. AI identifies block type. Creates ONE block (e.g., Amine Treater) in ProMax via COM API. |
+| Req 2: Parameter Population | Fill parameters based on user-provided inlet stream data via COM API. |
+| Req 3: Single Simulation Run | Run simulation once, display results, compare to targets. |
+| Req 4: Chat + VNC Streaming UI | Basic chat interface with live ProMax view via TightVNC/noVNC. |
 
 ### P1 - If Time Permits
 
@@ -78,61 +80,51 @@ These features are nice-to-have if time remains after P0 completion:
 
 | Requirement | Scope for Demo |
 |-------------|----------------|
-| Req 4: Basic Explanations | Simple explanations of why targets were/were not met. |
+| Req 5: Basic Explanations | Simple explanations of why targets were/were not met. |
 | Req 3 (partial): Manual Iterations | 1-2 manual iterations with AI suggestions for parameter adjustments. |
-| Req 7: File Download | ProMax file download only, skip report generation. |
+| Req 6: File Download | ProMax file download only, skip report generation. |
 
 ### P2 - Post-Demo (Out of MVP Scope)
 
 These features are deferred to future releases:
 
-- Full PFD interpretation with automatic detection of ALL blocks and connections (multi-block workflow)
-- Automatic equipment detection without user highlighting
-- Human-in-the-loop pause/resume with state re-assessment (Req 6)
-- Full educational content and "learn more" features
+- Full PFD interpretation with automatic detection of ALL blocks and connections
+- Multi-block workflow creation
+- Human-in-the-loop pause/resume with state re-assessment
 - Report generation (PDF/Excel/Word)
 - Multi-iteration automatic optimization loop
-- Multi-block workflow creation from comprehensive PFD analysis
+- Multi-user/multi-session architecture
+- Cloud/SaaS deployment
 
 ---
 
 ## Requirements
 
-### Requirement 1: Single Block Creation from PFD or Chat
+### Requirement 1: Single Block Creation from Chat or PFD
 
 **Priority:** P0 - Must Demo
 
-**User Story:** As a junior process engineer, I want to upload a PFD image and highlight a specific block OR describe a process block via chat, so that ProcAgent can identify and create the corresponding block in ProMax without requiring me to know proper engineering terminology or manually navigate the software.
-
-**Rationale:** Junior engineers often receive PFD diagrams from senior engineers or project documentation but may not know the proper terminology to describe equipment blocks. Image upload with visual highlighting provides a more natural and accessible way to specify which block they want to simulate.
+**User Story:** As a junior process engineer, I want to describe a process block via chat or upload a PFD image and describe which block to focus on, so that ProcAgent can identify and create the corresponding block in ProMax without requiring me to manually navigate the software.
 
 #### Acceptance Criteria
 
-1. WHEN the user uploads a PFD image (PNG, JPG, PDF), THEN the system SHALL accept the image and use multimodal AI to interpret it.
+1. WHEN the user provides a text description of a block type (e.g., "Amine Treater column") via chat, THEN the system SHALL accept the input and identify the appropriate ProMax block type.
 
-2. WHEN the user highlights or circles a specific area on the PFD image, THEN the system SHALL focus on identifying that specific equipment/block in the highlighted region.
+2. WHEN the user uploads a PFD image (PNG, JPG, PDF) along with a text description of which block to focus on, THEN the system SHALL use multimodal AI to interpret the image context.
 
-3. WHEN interpreting the PFD image, THEN the system SHALL identify the block type (e.g., "Amine Treater column") and relevant stream connections shown in the diagram.
+3. WHEN the user provides both an image and text description, THEN the system SHALL use the text to identify which specific equipment/block they want to simulate.
 
-4. WHEN the user provides a text description of a block type (e.g., "Amine Treater column") and inlet stream conditions, THEN the system SHALL accept the input and begin block creation.
+4. WHEN the system receives a block specification (via text or image+text), THEN the system SHALL map it to the appropriate ProMax block type (e.g., "Amine Treater" maps to Staged Column).
 
-5. WHEN the user provides both an image and text description, THEN the system SHALL use the text to supplement and clarify the image interpretation.
+5. WHEN creating the block, THEN the system SHALL create a single block in ProMax using the ProMax COM API.
 
-6. WHEN the system receives a block specification (via image or text), THEN the system SHALL identify the appropriate ProMax block type.
+6. WHEN the user specifies inlet and outlet stream names, THEN the system SHALL create corresponding streams and connect them to the block via COM API.
 
-7. WHEN creating the block, THEN the system SHALL create a single block in ProMax using the ProMax COM API on the backend sandbox instance.
+7. IF the block specification is ambiguous or incomplete, THEN the system SHALL prompt the user for clarification before proceeding.
 
-8. WHEN the user specifies inlet and outlet stream names (or they are visible in the PFD), THEN the system SHALL create corresponding streams and connect them to the block.
+8. WHEN the block creation is complete, THEN the system SHALL display a summary of the created block and its stream connections to the user.
 
-9. IF the block specification is ambiguous or incomplete (whether from image or text), THEN the system SHALL prompt the user for clarification before proceeding.
-
-10. WHEN the block creation is complete, THEN the system SHALL display a summary of the created block and its stream connections to the user.
-
-#### Future Enhancement (P2)
-
-- Full PFD interpretation with ALL blocks and connections (multi-block workflow creation)
-- Automatic detection of all equipment without user highlighting
-- Multi-block workflow creation from comprehensive PFD analysis
+9. IF the COM API cannot accomplish the block creation, THEN the system SHALL attempt to use Claude Computer Use as a fallback mechanism.
 
 ---
 
@@ -140,7 +132,7 @@ These features are deferred to future releases:
 
 **Priority:** P0 - Must Demo
 
-**User Story:** As a junior process engineer, I want to provide inlet stream data and have the system populate block parameters, so that I have a working simulation configuration without manually entering every value.
+**User Story:** As a junior process engineer, I want to provide inlet stream data and have the system populate block parameters via COM API, so that I have a working simulation configuration without manually entering every value.
 
 #### Acceptance Criteria
 
@@ -158,11 +150,11 @@ These features are deferred to future releases:
 
 **Block and Stream Creation**
 
-6. WHEN the thermodynamic environment is configured with all components, THEN the system SHALL proceed to create blocks and streams in the flowsheet.
+6. WHEN the thermodynamic environment is configured with all components, THEN the system SHALL proceed to create blocks and streams in the flowsheet using the COM API.
 
 7. WHEN a block is created in ProMax, THEN the system SHALL prompt the user to provide inlet stream data (composition, flow rate, temperature, pressure).
 
-8. WHEN the user provides inlet stream data, THEN the system SHALL populate the corresponding stream properties in ProMax using the ProMax COM API.
+8. WHEN the user provides inlet stream data, THEN the system SHALL populate the corresponding stream properties in ProMax using the COM API.
 
 **Stream Property and Composition Setting**
 
@@ -180,23 +172,15 @@ These features are deferred to future releases:
 
 14. IF any required parameter cannot be determined from user input or defaults, THEN the system SHALL notify the user that manual input is required.
 
-15. WHEN parameters are displayed, THEN the system SHALL allow the user to review and modify any values before simulation.
-
 **Order of Operations**
 
-16. WHEN setting up a complete simulation, THEN the system SHALL follow this mandatory sequence:
+15. WHEN setting up a complete simulation, THEN the system SHALL follow this mandatory sequence:
     - Step 1: Create flowsheet
     - Step 2: Add all required components to the thermodynamic environment
     - Step 3: Create blocks and streams
     - Step 4: Set stream properties (temperature, pressure, flow rate)
     - Step 5: Set stream compositions
     - Step 6: Flash streams to establish equilibrium
-
-#### Future Enhancement (P1/P2)
-
-- Smart inference of parameters based on process context (upstream/downstream conditions)
-- Explanations of why specific default values were chosen
-- Industry-standard typical values based on process type
 
 ---
 
@@ -208,11 +192,11 @@ These features are deferred to future releases:
 
 #### Acceptance Criteria (P0 - Single Run)
 
-1. WHEN the user requests to run a simulation, THEN the system SHALL execute the simulation in ProMax using the ProMax COM API.
+1. WHEN the user requests to run a simulation, THEN the system SHALL execute the simulation in ProMax using the COM API (Solver.Solve).
 
-2. WHEN the simulation completes, THEN the system SHALL retrieve results from ProMax using the ProMax COM API.
+2. WHEN the simulation completes, THEN the system SHALL retrieve results from ProMax using the COM API.
 
-3. WHEN results are retrieved, THEN the system SHALL display key output values to the user in a clear format.
+3. WHEN results are retrieved, THEN the system SHALL display key output values to the user in a clear format in the chat interface.
 
 4. WHEN the user has specified performance targets, THEN the system SHALL compare results against those targets and indicate pass/fail status.
 
@@ -220,187 +204,125 @@ These features are deferred to future releases:
 
 #### Acceptance Criteria (P1 - Manual Iterations)
 
-6. WHEN the user requests to run another simulation with adjusted parameters, THEN the system SHALL apply the parameter changes and re-run the simulation.
+6. WHEN the user requests to run another simulation with adjusted parameters, THEN the system SHALL apply the parameter changes via COM API and re-run the simulation.
 
 7. WHEN running follow-up iterations, THEN the system SHALL display current parameters, results, and comparison to previous runs.
 
-8. WHEN each iteration completes, THEN the system SHALL record results for user review.
+---
 
-#### Future Enhancement (P2)
+### Requirement 4: User Interface - Browser-Based Chat with VNC Streaming
 
-- Automatic multi-iteration optimization loop
-- Maximum iteration limits with intelligent stopping criteria
-- Parameter tuning recommendations based on process engineering principles
-- Historical comparison across all iterations
+**Priority:** P0 - Must Demo
+
+**User Story:** As a demo user, I want a browser-based chat interface with live visibility into what the AI is doing in ProMax, so that I can follow along and understand the process.
+
+#### Acceptance Criteria
+
+**Chat Interface**
+
+1. WHEN the user navigates to the ProcAgent web application (localhost URL), THEN the system SHALL present a browser-based chat interface as the primary input method.
+
+2. WHEN the user submits a message in the chat, THEN the system SHALL acknowledge receipt and provide status updates on processing.
+
+3. WHILE the agent is performing actions via the COM API, THEN the system SHALL show real-time status indicators (e.g., "Creating Amine Treater block", "Populating stream data").
+
+**VNC Streaming (Single Fixed Instance)**
+
+4. WHEN displaying the ProMax view, THEN the system SHALL stream video from a single TightVNC server instance running on a fixed port (e.g., 5900) with a fixed password configured at deployment time.
+
+5. WHEN the backend starts, THEN the system SHALL expect TightVNC to already be running - it does NOT spawn per-session VNC instances.
+
+6. WHEN displaying the VNC stream, THEN the system SHALL use websockify to proxy the VNC connection to a noVNC viewer embedded in the browser.
+
+7. WHEN rendering the VNC stream, THEN the system SHALL ensure minimal latency so users can follow agent actions in near real-time (minimum 5 fps).
+
+**Browser Compatibility**
+
+8. WHEN rendering the interface, THEN the system SHALL provide a responsive layout suitable for desktop screen sizes (minimum 1280x720).
+
+9. WHEN accessing the web application, THEN the system SHALL support modern web browsers (Chrome, Firefox, Edge) without requiring browser plugins.
 
 ---
 
-### Requirement 4: Explainable AI and Education
+### Requirement 5: Explainable AI and Education
 
 **Priority:** P1 - If Time Permits
 
-**User Story:** As a junior process engineer, I want the AI to explain why my targets were or were not met, so that I can learn from the simulation results and communicate findings to my team.
+**User Story:** As a junior process engineer, I want the AI to explain why my targets were or were not met, so that I can learn from the simulation results.
 
 #### Acceptance Criteria (P1 - Basic Explanations)
 
-1. WHEN simulation results do not meet targets, THEN the system SHALL provide a brief explanation of likely causes.
+1. WHEN simulation results do not meet targets, THEN the system SHALL provide a brief explanation of likely causes in the chat response.
 
 2. WHEN suggesting parameter adjustments, THEN the system SHALL explain why each adjustment is expected to improve results.
 
 3. WHEN the user asks a question about results or configuration, THEN the system SHALL respond with relevant information.
 
-#### Future Enhancement (P2)
-
-- Optional "learn more" explanations for each major decision
-- Educational content introducing industry-standard terminology
-- Summary reports for sharing with managers
-- Deep-dive explanations of process engineering concepts
-
 ---
 
-### Requirement 5: User Interface - Browser-Based Chat and Streaming View
+### Requirement 6: Export and Download Capability
 
-**Priority:** P0 - Must Demo
+**Priority:** P1 (file download)
 
-**User Story:** As a junior process engineer, I want a user-friendly browser-based chat interface with live visibility into what the AI is doing in ProMax on the backend, so that I can follow along, understand the process, and intervene if needed.
-
-#### Acceptance Criteria
-
-1. WHEN the user navigates to the ProcAgent web application, THEN the system SHALL present a browser-based chatbot interface as the primary input method for user commands and questions.
-
-2. WHEN ProcAgent is operating on ProMax, THEN the system SHALL display a live streaming view of the backend ProMax sandbox instance using TightVNC (or similar remote desktop streaming technology) embedded in the browser.
-
-3. WHILE the agent is performing actions via the COM API, THEN the system SHALL show real-time indicators of what actions are being taken (e.g., "Creating Amine Treater block", "Populating stream data").
-
-4. WHEN displaying the TightVNC streaming view, THEN the system SHALL ensure minimal latency so users can follow agent actions in near real-time and see exactly what is happening in ProMax.
-
-5. WHEN the user submits a message in the chat, THEN the system SHALL acknowledge receipt and provide status updates on processing.
-
-6. WHEN accessing the web application, THEN the system SHALL support modern web browsers (Chrome, Firefox, Edge, Safari) without requiring browser plugins or extensions.
-
-7. WHEN rendering the interface, THEN the system SHALL provide a responsive layout suitable for desktop and laptop screen sizes.
-
-8. WHEN displaying the streaming view, THEN the system SHALL enable users to visually observe ProMax state changes made by the COM API, providing transparency into the automation process.
-
----
-
-### Requirement 6: Human-in-the-Loop Control
-
-**Priority:** P2 - Post-Demo
-
-**User Story:** As a junior process engineer, I want to pause the AI agent, make manual changes in the streamed ProMax view via TightVNC, and then resume AI operation, so that I maintain control over the simulation and can apply my own judgment.
-
-**MVP Note:** For the demo, users can stop/cancel operations and visually monitor via TightVNC streaming, but sophisticated pause/resume with state re-assessment is deferred to post-demo.
-
-#### Acceptance Criteria (Future)
-
-1. WHEN the user clicks the "Pause" button, THEN the system SHALL immediately halt all COM API operations on the backend ProMax instance.
-
-2. WHEN the agent is paused, THEN the system SHALL allow the user to manually interact with the ProMax application through the TightVNC streaming view without interference.
-
-3. WHEN the user clicks the "Resume" button after pausing, THEN the system SHALL re-assess the current ProMax state (via COM API queries) before continuing operations.
-
-4. WHEN resuming, IF the user has made manual changes, THEN the system SHALL acknowledge those changes and incorporate them into its understanding of the current workflow state.
-
-5. WHEN the agent is operating, THEN the system SHALL display a clear "Pause" control that is always accessible to the user in the browser interface.
-
-6. IF the user makes changes that conflict with the AI's planned actions, THEN the system SHALL prompt the user to confirm how to proceed.
-
----
-
-### Requirement 7: Export and Download Capability
-
-**Priority:** P1 (file download) / P2 (reports)
-
-**User Story:** As a junior process engineer, I want to download my completed work from the backend server, so that I can continue editing locally if I have ProMax, share with colleagues, or archive my projects.
+**User Story:** As a demo user, I want to download the ProMax project file after the demo, so that I can keep a copy of the work.
 
 #### Acceptance Criteria (P1 - File Download)
 
-1. WHEN the user requests to export their work, THEN the system SHALL provide options to download ProMax project files (.prx or equivalent format).
+1. WHEN the user requests to export their work, THEN the system SHALL save the ProMax project using the COM API (Save method).
 
-2. WHEN exporting project files, THEN the system SHALL package all necessary files (project, streams, configurations) into a downloadable archive.
+2. WHEN exporting project files, THEN the system SHALL provide a download link for the .prx file from the server's working directory.
 
-3. WHEN a simulation session is complete, THEN the system SHALL display export options prominently in the interface.
-
-4. WHEN downloading files, THEN the system SHALL provide clear file names that identify the project and timestamp.
-
-#### Future Enhancement (P2)
-
-- Report generation in common formats (PDF, Excel, Word)
-- Summary reports including simulation setup, parameters, and results
-- Prompt to export before ending session with unsaved changes
+3. WHEN downloading files, THEN the system SHALL provide clear file names that identify the project.
 
 ---
 
 ## Non-Functional Requirements
 
-### Requirement 8: Performance
+### Requirement 7: Performance
 
-**User Story:** As a user, I want the system to respond quickly to my inputs and perform simulations without excessive delays, so that I can work efficiently.
+**User Story:** As a demo user, I want the system to respond reasonably quickly to my inputs, so that the demo flows smoothly.
 
 #### Acceptance Criteria
 
-1. WHEN the user submits a chat message, THEN the system SHALL acknowledge the message within 2 seconds.
+1. WHEN the user submits a chat message, THEN the system SHALL acknowledge the message within 3 seconds.
 
-2. WHEN performing COM API operations on ProMax, THEN the system SHALL execute actions efficiently while maintaining reliability.
+2. WHEN performing COM API operations on ProMax, THEN the system SHALL execute actions and provide feedback to the user.
 
-3. WHEN streaming the ProMax view via TightVNC to the browser, THEN the system SHALL maintain a frame rate sufficient for the user to follow agent actions (minimum 5 fps).
-
-4. WHEN handling concurrent users, THEN the backend system SHALL provision isolated ProMax sandbox instances to maintain performance.
+3. WHEN streaming the ProMax view via VNC to the browser, THEN the system SHALL maintain a frame rate sufficient for the user to follow agent actions (minimum 5 fps).
 
 ---
 
-### Requirement 9: Reliability
+### Requirement 8: Reliability
 
-**User Story:** As a user, I want the system to handle errors gracefully and not leave ProMax in an inconsistent state, so that I can trust the tool for important work.
+**User Story:** As a demo user, I want the system to handle errors gracefully, so that the demo can recover from issues.
 
 #### Acceptance Criteria
 
-1. IF an error occurs during block creation, THEN the system SHALL stop, notify the user, and provide options to retry or rollback.
+1. IF an error occurs during block creation or COM API operation, THEN the system SHALL notify the user with a clear error message and suggest recovery options (retry, restart).
 
-2. IF the backend ProMax instance becomes unresponsive, THEN the system SHALL detect the condition and notify the user with recovery options.
+2. IF the ProMax application becomes unresponsive, THEN the system SHALL detect the condition and notify the user.
 
-3. WHEN performing multi-step operations, THEN the system SHALL implement checkpointing so partial progress is preserved on failure.
-
-4. IF the browser connection is interrupted, THEN the system SHALL preserve session state on the backend and allow reconnection without data loss.
+3. IF a COM API operation fails, THEN the system SHALL consider using Claude Computer Use as a fallback (if applicable).
 
 ---
 
-### Requirement 10: Compatibility
+### Requirement 9: Single-PC Deployment
 
-**User Story:** As a user, I want ProcAgent to work with my web browser without special configurations, so that I can access the service easily.
-
-#### Acceptance Criteria
-
-1. WHEN accessing the web application, THEN the system SHALL be compatible with the latest versions of Chrome, Firefox, Edge, and Safari browsers.
-
-2. WHEN connecting to ProMax on the backend, THEN the backend system SHALL support standard ProMax installations without requiring modifications to ProMax.
-
-3. WHEN using COM API integration, THEN the backend system SHALL handle different ProMax versions gracefully with appropriate version detection.
-
-4. WHEN rendering the interface, THEN the system SHALL function correctly on screens with minimum resolution of 1280x720.
-
----
-
-### Requirement 11: Security and Data Handling
-
-**User Story:** As a user at an engineering firm, I want my simulation data and PFD uploads to be handled securely in the cloud environment, so that proprietary information is protected.
+**User Story:** As a demo operator, I want to run the entire system on a single Windows PC without complex infrastructure setup.
 
 #### Acceptance Criteria
 
-1. WHEN the user uploads files or provides data, THEN the system SHALL transmit the data securely over HTTPS/TLS to the backend server.
+1. WHEN deploying ProcAgent for demo, THEN the system SHALL run entirely on a single Windows PC (backend, ProMax, VNC, browser all on same machine).
 
-2. WHEN interacting with AI models, THEN the system SHALL use secure API connections (HTTPS/TLS).
+2. WHEN starting the demo environment, THEN the operator SHALL:
+   - Ensure ProMax is installed and licensed
+   - Ensure TightVNC Server is running on a fixed port (e.g., 5900)
+   - Start the ProcAgent backend server
+   - Open a browser to localhost
 
-3. WHEN storing session data, THEN the system SHALL maintain data on secure backend servers with appropriate access controls.
+3. WHEN the system is running, THEN the system SHALL NOT require cloud services, external servers, or multi-machine networking (except for Anthropic API calls).
 
-4. WHEN a user session ends, THEN the system SHALL provide options to download work before clearing session data from the backend.
-
-5. WHEN handling user data, THEN the system SHALL isolate each user's ProMax sandbox instance to prevent data leakage between users.
-
-6. WHEN authenticating users, THEN the system SHALL require secure login credentials before granting access to the application.
-
-7. WHEN transmitting TightVNC streaming video of the ProMax sandbox, THEN the system SHALL use encrypted connections to protect visual data.
+4. WHEN handling user sessions, THEN the system SHALL support a single user at a time (no multi-tenancy).
 
 ---
 
@@ -410,21 +332,47 @@ The following items are explicitly out of scope for the MVP:
 
 ### Deferred to Post-Demo (P2)
 
-- **Full PFD interpretation of ALL blocks** - MVP supports single-block identification from PFD with user highlighting; automatic detection of all equipment and connections is deferred
+- **Full PFD interpretation of ALL blocks** - MVP supports single-block identification; automatic detection of all equipment is deferred
 - **Multi-block workflow creation** - MVP focuses on single block (Amine Treater) creation
 - **Automatic multi-iteration optimization** - MVP does single run + suggestions; user manually requests re-runs
 - **Sophisticated pause/resume with state re-assessment** - MVP allows stop/cancel only
 - **Report generation to PDF/Excel/Word formats** - MVP provides ProMax file download only
-- **Full educational content** - MVP provides basic explanations only
 - **Human-in-the-loop with state detection** - MVP defers complex state re-assessment on resume
+- **Block highlighting on PFD with annotation overlay** - Deferred; MVP uses text description to identify blocks
 
-### Out of Scope for All Releases (Current Planning)
+### Out of Scope for MVP Architecture
 
-- Support for simulation software other than ProMax
-- Multi-user collaboration features (real-time collaborative editing)
-- Mobile device interfaces (smartphone/tablet optimized views)
-- Advanced optimization algorithms (genetic algorithms, etc.)
-- Integration with external engineering databases
-- Automated report generation to regulatory standards
-- Self-hosted/on-premises deployment options
-- Offline mode or local installation
+- **Multi-user SaaS deployment** - MVP is single-PC, single-user demo only
+- **Per-session VNC spawning** - MVP uses single fixed VNC instance
+- **User authentication and session isolation** - MVP has no login, no multi-tenancy
+- **Cloud/distributed deployment** - MVP runs entirely on one Windows PC
+- **Data persistence across sessions** - MVP treats each demo as a fresh start
+- **Mobile device interfaces** - Desktop browser only
+- **Support for simulation software other than ProMax**
+
+---
+
+## Architecture Summary (MVP)
+
+```
+Single Windows PC
+├── Browser (Chrome/Firefox/Edge)
+│   ├── Chat UI (WebSocket to backend)
+│   └── noVNC Viewer (WebSocket via websockify)
+│
+├── ProcAgent Backend (FastAPI)
+│   ├── Claude Agent SDK (orchestrator)
+│   ├── ProMax MCP Server (COM API tools)
+│   └── Computer Use Executor (fallback)
+│
+├── TightVNC Server (fixed port 5900, fixed password)
+├── websockify (VNC to WebSocket proxy)
+│
+└── ProMax Application (COM automation target)
+```
+
+**Key Points:**
+- Everything runs on ONE machine
+- Single TightVNC instance, NOT per-session
+- No authentication, no multi-user
+- Anthropic API calls are the only external network dependency
