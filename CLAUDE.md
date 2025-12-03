@@ -72,3 +72,7 @@ The MVP demonstrates a single Amine Treater (301-E) simulation:
 - Block type: Staged Column for H2S/CO2 removal with MDEA
 - Performance targets: Offgas H2S ≤100 ppm, Rich Amine Loading ≤0.45 mol/mol
 - Example script: `scripts/promax_301e_amine_treater.py`
+
+
+## User instruction
+-https://platform.claude.com/docs/en/agent-sdk/python refer to documents here and sample code here for claude agent SDK usage
