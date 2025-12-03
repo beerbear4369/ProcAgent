@@ -1,0 +1,29 @@
+# ProcAgent Configuration
+
+# Server settings
+server:
+  host: "127.0.0.1"
+  port: 8000
+
+# VNC settings (TightVNC must be pre-running)
+vnc:
+  host: "127.0.0.1"
+  port: 5900
+  password: "procagent"
+  websockify_port: 6080
+
+# Claude Agent SDK settings
+agent:
+  model: "claude-sonnet-4-5-20250514"
+  max_turns: 50
+  max_budget_usd: 10.0
+
+# ProMax settings
+promax:
+  with_gui: true
+  working_dir: "./projects"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

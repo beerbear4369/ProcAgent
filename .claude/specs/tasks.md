@@ -6,7 +6,7 @@ This implementation plan provides a phased, test-driven approach to building the
 
 ## Phase 1: Project Foundation and Core Infrastructure
 
-- [ ] 1. Set up project structure and development environment
+- [x] 1. Set up project structure and development environment
   - Create the procagent directory structure as defined in design (agent/, mcp/, cua/, server/, web/, skills/)
   - Initialize Python virtual environment and install core dependencies (fastapi, uvicorn, pywin32, websockets)
   - Create requirements.txt with all dependencies
@@ -14,7 +14,7 @@ This implementation plan provides a phased, test-driven approach to building the
   - Create basic logging infrastructure
   - _Requirements: Req 9.1 (single PC deployment), Req 9.2 (startup prerequisites)_
 
-- [ ] 2. Create core data models and type definitions
+- [x] 2. Create core data models and type definitions
   - Implement Pydantic models for ProcAgentSession, BlockIdentification, StreamSpec
   - Implement StreamProperties, PerformanceTarget, SimulationResult models
   - Implement ResultsComparison, TargetAssessment, AdjustmentSuggestion models
@@ -26,34 +26,34 @@ This implementation plan provides a phased, test-driven approach to building the
 
 ## Phase 2: ProMax MCP Server (COM API Integration)
 
-- [ ] 3. Implement ProMax MCP Server foundation
+- [x] 3. Implement ProMax MCP Server foundation
   - Create promax_server.py with MCP server factory function
   - Implement COM connection state management (_state dictionary)
   - Implement _get_promax() helper for COM connection
   - Write mock-based unit tests for server initialization
   - _Requirements: Req 1.5 (COM API block creation), Req 2.6 (COM API for blocks/streams)_
 
-- [ ] 4. Implement project and flowsheet management tools
-  - [ ] 4.1 Implement create_project tool
+- [x] 4. Implement project and flowsheet management tools
+  - [x] 4.1 Implement create_project tool
     - Create new ProMax project via pmx.New()
     - Return structured MCP response with project name
     - Write unit tests with mocked COM objects
     - _Requirements: Req 2.1 (flowsheet creation)_
 
-  - [ ] 4.2 Implement add_flowsheet tool
+  - [x] 4.2 Implement add_flowsheet tool
     - Add flowsheet to project via Flowsheets.Add()
     - Handle error case when no project exists
     - Write unit tests for success and error cases
     - _Requirements: Req 2.1 (flowsheet creation)_
 
-  - [ ] 4.3 Implement add_components tool
+  - [x] 4.3 Implement add_components tool
     - Add chemical components to environment via env.Components.Add()
     - Track added and failed components
     - Return summary with success/failure counts
     - Write unit tests for component addition
     - _Requirements: Req 2.2 (component extraction), Req 2.3 (component addition), Req 2.4 (ProMax nomenclature)_
 
-- [ ] 5. Implement block creation tool
+- [x] 5. Implement block creation tool
   - Implement create_block tool with block type mapping (AmineTreater, Separator, HeatExchanger, etc.)
   - Map block types to Visio stencils and master shapes (Column.vss/Distill, Separators.vss, etc.)
   - Implement Visio shape drop at specified coordinates
@@ -61,23 +61,23 @@ This implementation plan provides a phased, test-driven approach to building the
   - Write unit tests for block creation with mock Visio objects
   - _Requirements: Req 1.4 (block type mapping), Req 1.5 (COM API block creation)_
 
-- [ ] 6. Implement stream creation and connection tools
-  - [ ] 6.1 Implement create_stream tool
+- [x] 6. Implement stream creation and connection tools
+  - [x] 6.1 Implement create_stream tool
     - Drop Process Stream shape from Streams.vss stencil
     - Position stream at specified x,y coordinates
     - Set stream name
     - Write unit tests for stream creation
     - _Requirements: Req 1.6 (stream creation and connection)_
 
-  - [ ] 6.2 Implement connect_stream tool
+  - [x] 6.2 Implement connect_stream tool
     - Connect stream to block port using Visio GlueTo
     - Handle inlet vs outlet connections (EndX vs BeginX)
     - Map port_index to Connections.X cell
     - Write unit tests for stream connection
     - _Requirements: Req 1.6 (stream creation and connection)_
 
-- [ ] 7. Implement stream property and composition tools
-  - [ ] 7.1 Implement set_stream_properties tool
+- [x] 7. Implement stream property and composition tools
+  - [x] 7.1 Implement set_stream_properties tool
     - Set temperature (C to K conversion)
     - Set pressure (kPa to Pa conversion)
     - Set molar flow (kmol/h to mol/s conversion)
@@ -85,19 +85,19 @@ This implementation plan provides a phased, test-driven approach to building the
     - Write unit tests for unit conversions
     - _Requirements: Req 2.7 (prompt for inlet stream data), Req 2.8 (populate stream properties), Req 2.9 (property ordering)_
 
-  - [ ] 7.2 Implement set_stream_composition tool
+  - [x] 7.2 Implement set_stream_composition tool
     - Validate composition sums to 1.0 (within 0.001 tolerance)
     - Build composition array matching environment component order
     - Set composition via SIValues tuple
     - Write unit tests for composition validation and setting
     - _Requirements: Req 2.10 (composition setting via SIValues)_
 
-  - [ ] 7.3 Implement flash_stream tool
+  - [x] 7.3 Implement flash_stream tool
     - Call stream.Flash() to establish thermodynamic equilibrium
     - Write unit test for flash operation
     - _Requirements: Req 2.11 (flash streams)_
 
-- [ ] 8. Implement simulation execution and results tools
+- [x] 8. Implement simulation execution and results tools
   - [ ] 8.1 Implement run_simulation tool
     - Execute solver via flowsheet.Solver.Solve()
     - Interpret status code (>=1 converged, 0 not converged, <0 error)
@@ -121,7 +121,7 @@ This implementation plan provides a phased, test-driven approach to building the
 
 ## Phase 3: Computer Use MCP Server (Fallback Mechanism)
 
-- [ ] 9. Implement Computer Use MCP Server
+- [x] 9. Implement Computer Use MCP Server
   - [ ] 9.1 Create computer_use_server.py with MCP server factory
     - Set up display configuration (width, height)
     - Write unit tests for server initialization
@@ -157,7 +157,7 @@ This implementation plan provides a phased, test-driven approach to building the
 
 ## Phase 4: Claude Agent Core (Orchestrator)
 
-- [ ] 10. Implement ProcAgentCore class foundation
+- [x] 10. Implement ProcAgentCore class foundation
   - Create core.py with ProcAgentCore class
   - Implement constructor accepting session_id, MCP servers, working_dir
   - Implement initialize() method to create ClaudeSDKClient with options
@@ -166,7 +166,7 @@ This implementation plan provides a phased, test-driven approach to building the
   - Write unit tests with mocked ClaudeSDKClient
   - _Requirements: Req 4.1 (browser chat interface), Req 7.1 (3-second acknowledgment)_
 
-- [ ] 11. Implement system prompt for ProMax operations
+- [x] 11. Implement system prompt for ProMax operations
   - Build comprehensive system prompt with tool descriptions
   - Include workflow for Amine Treater demo (12-step process)
   - Include rules for COM API vs Computer Use selection
@@ -174,7 +174,7 @@ This implementation plan provides a phased, test-driven approach to building the
   - Write tests to verify system prompt content
   - _Requirements: Req 1.1-1.4 (block identification), Req 2.15 (setup sequence)_
 
-- [ ] 12. Implement user message processing
+- [x] 12. Implement user message processing
   - [ ] 12.1 Implement process_user_message async generator
     - Build prompt parts with optional image and stream data
     - Send query to Claude Agent SDK
@@ -189,7 +189,7 @@ This implementation plan provides a phased, test-driven approach to building the
     - Write unit tests for multimodal input handling
     - _Requirements: Req 1.2 (PFD image interpretation), Req 1.3 (image + text combination)_
 
-- [ ] 13. Implement tool validation hooks
+- [x] 13. Implement tool validation hooks
   - [ ] 13.1 Implement composition validation hook
     - Validate composition sums to 1.0 before set_stream_composition
     - Return deny decision with reason if invalid
@@ -209,7 +209,7 @@ This implementation plan provides a phased, test-driven approach to building the
     - Write unit tests for logging hooks
     - _Requirements: Req 4.3 (status indicators), Req 8.1 (error notification)_
 
-- [ ] 14. Implement cleanup and resource management
+- [x] 14. Implement cleanup and resource management
   - Implement cleanup() method to close ClaudeSDKClient
   - Handle graceful shutdown of agent resources
   - Write unit tests for cleanup behavior
@@ -219,7 +219,7 @@ This implementation plan provides a phased, test-driven approach to building the
 
 ## Phase 5: Backend Server (FastAPI + WebSocket)
 
-- [ ] 15. Implement FastAPI application foundation
+- [x] 15. Implement FastAPI application foundation
   - Create app.py with FastAPI application
   - Configure CORS for localhost access
   - Mount static files directory for web assets
@@ -228,7 +228,7 @@ This implementation plan provides a phased, test-driven approach to building the
   - Write unit tests for basic endpoints
   - _Requirements: Req 4.1 (browser-based interface), Req 9.1 (single PC deployment)_
 
-- [ ] 16. Implement WebSocket chat endpoint
+- [x] 16. Implement WebSocket chat endpoint
   - [ ] 16.1 Create WebSocket connection handler
     - Accept WebSocket connection
     - Generate unique session_id
@@ -252,7 +252,7 @@ This implementation plan provides a phased, test-driven approach to building the
     - Write unit tests for error scenarios
     - _Requirements: Req 8.1 (error notification), Req 8.2 (unresponsive detection)_
 
-- [ ] 17. Implement VNC connection endpoint
+- [x] 17. Implement VNC connection endpoint
   - Create endpoint to return VNC connection info (host, port, password)
   - Handle session not found error
   - Write unit tests for VNC info endpoint
@@ -262,7 +262,7 @@ This implementation plan provides a phased, test-driven approach to building the
 
 ## Phase 6: Session Management
 
-- [ ] 18. Implement SessionManager class
+- [x] 18. Implement SessionManager class
   - [ ] 18.1 Create Session dataclass and SessionManager foundation
     - Define Session with session_id, vnc_port, vnc_password, working_dir
     - Implement SessionManager with configurable base_vnc_port, max_sessions, timeout
@@ -295,7 +295,7 @@ This implementation plan provides a phased, test-driven approach to building the
 
 ## Phase 7: Web Frontend
 
-- [ ] 19. Implement HTML/CSS structure for chat interface
+- [x] 19. Implement HTML/CSS structure for chat interface
   - Create index.html with header, main container, chat panel, VNC panel layout
   - Style message bubbles (user, assistant, tool)
   - Style input area with text input, send button, upload button
@@ -303,7 +303,7 @@ This implementation plan provides a phased, test-driven approach to building the
   - Ensure responsive layout for 1280x720 minimum
   - _Requirements: Req 4.1 (browser-based chat), Req 4.8 (1280x720 minimum), Req 4.9 (modern browser support)_
 
-- [ ] 20. Implement WebSocket communication
+- [x] 20. Implement WebSocket communication
   - [ ] 20.1 Implement connect() function
     - Create WebSocket connection to /ws endpoint
     - Handle onopen, onclose, onerror events
@@ -320,7 +320,7 @@ This implementation plan provides a phased, test-driven approach to building the
     - Handle error (display error message)
     - _Requirements: Req 4.2 (status updates), Req 4.3 (real-time status indicators)_
 
-- [ ] 21. Implement user input handling
+- [x] 21. Implement user input handling
   - [ ] 21.1 Implement sendMessage() function
     - Get message from input field
     - Add user message to chat display
@@ -335,14 +335,14 @@ This implementation plan provides a phased, test-driven approach to building the
     - Display upload confirmation in chat
     - _Requirements: Req 1.2 (PFD image upload)_
 
-- [ ] 22. Implement results display
+- [x] 22. Implement results display
   - Create displayResults() function
   - Build HTML table with parameter, target, actual, status columns
   - Apply pass/fail styling based on overall result
   - Display suggestions if targets not met
   - _Requirements: Req 3.3 (display results), Req 3.4 (pass/fail status), Req 3.5 (suggestions)_
 
-- [ ] 23. Integrate noVNC viewer
+- [x] 23. Integrate noVNC viewer
   - Add iframe for noVNC viewer
   - Set iframe src to VNC WebSocket path on session creation
   - Style VNC panel for proper display
@@ -352,7 +352,7 @@ This implementation plan provides a phased, test-driven approach to building the
 
 ## Phase 8: Claude Skills (Workflow Templates)
 
-- [ ] 24. Create Amine Treater skill
+- [x] 24. Create Amine Treater skill
   - Create skills/promax-amine-treater/SKILL.md
   - Document required components (MDEA, H2S, CO2, Water, hydrocarbons)
   - Document block creation steps (Distill from Column.vss)
@@ -360,14 +360,14 @@ This implementation plan provides a phased, test-driven approach to building the
   - Document typical operating conditions and performance targets
   - _Requirements: Req 1.4 (block type mapping), Req 3.4 (performance targets)_
 
-- [ ] 25. Create Stream Setup skill
+- [x] 25. Create Stream Setup skill
   - Create skills/promax-stream-setup/SKILL.md
   - Document property setting order (T, P, flow, composition, flash)
   - Document composition rules (sum to 1.0, normalize if needed)
   - Document common errors and solutions
   - _Requirements: Req 2.15 (setup sequence), Req 2.10 (composition rules)_
 
-- [ ] 26. Create Simulation Runner skill
+- [x] 26. Create Simulation Runner skill
   - Create skills/promax-simulation-runner/SKILL.md
   - Document pre-simulation checklist
   - Document status code interpretation
