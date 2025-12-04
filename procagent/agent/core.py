@@ -336,6 +336,7 @@ class ProcAgentCore:
             max_turns=20,
             mcp_servers={"promax": self._promax_server},
             allowed_tools=ALLOWED_TOOLS,
+            permission_mode="bypassPermissions",  # Auto-approve MCP tools
         )
 
         # Client instance (created on first message)
