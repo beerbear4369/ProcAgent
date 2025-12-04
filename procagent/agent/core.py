@@ -372,11 +372,19 @@ class ProcAgentCore:
 
         try:
             client = await self._ensure_client()
+
+            # DEBUG: Log the prompt being sent
+            logger.debug(f"[PROMPT] {prompt[:500]}{'...' if len(prompt) > 500 else ''}")
+
             await client.query(prompt)
 
             async for msg in client.receive_response():
+                # DEBUG: Log raw message type
+                logger.debug(f"[MSG] {type(msg).__name__}: {str(msg)[:200]}")
+
                 if isinstance(msg, SystemMessage):
                     logger.info(f"SDK session: {msg.data.get('session_id', 'unknown')}")
+                    logger.debug(f"[SYSTEM] {msg.data}")
                     yield AgentResponse(
                         type=ResponseType.STATUS,
                         status=f"Connected to Claude ({msg.data.get('model', 'unknown')})"
@@ -384,11 +392,13 @@ class ProcAgentCore:
                 elif isinstance(msg, AssistantMessage):
                     for block in msg.content:
                         if isinstance(block, TextBlock):
+                            logger.debug(f"[TEXT] {block.text[:200]}{'...' if len(block.text) > 200 else ''}")
                             yield AgentResponse(
                                 type=ResponseType.TEXT,
                                 content=block.text
                             )
                         elif isinstance(block, ToolUseBlock):
+                            logger.debug(f"[TOOL_USE] {block.name}: {json.dumps(block.input)}")
                             yield AgentResponse(
                                 type=ResponseType.TOOL_USE,
                                 tool_info=ToolUseInfo(
@@ -398,6 +408,7 @@ class ProcAgentCore:
                                 )
                             )
                 elif isinstance(msg, ResultMessage):
+                    logger.debug(f"[RESULT] duration_ms={getattr(msg, 'duration_ms', 0)}")
                     yield AgentResponse(
                         type=ResponseType.RESULTS,
                         results=ResultsInfo(

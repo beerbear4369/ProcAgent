@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+# Load .env file from project root
+load_dotenv()
 
 
 class ServerConfig(BaseModel):
@@ -82,6 +86,8 @@ class Settings(BaseModel):
         if os.getenv("ANTHROPIC_API_KEY"):
             # API key is used by Claude Agent SDK directly
             pass
+        if os.getenv("PROCAGENT_LOG_LEVEL"):
+            config_data.setdefault("logging", {})["level"] = os.getenv("PROCAGENT_LOG_LEVEL")
 
         return cls(**config_data)
 

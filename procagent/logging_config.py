@@ -38,6 +38,10 @@ def setup_logging(level: Optional[str] = None) -> logging.Logger:
     logger = logging.getLogger("procagent")
     logger.setLevel(getattr(logging, log_level.upper()))
 
+    # Also enable Claude Agent SDK logging at DEBUG level
+    if log_level.upper() == "DEBUG":
+        logging.getLogger("claude_agent_sdk").setLevel(logging.DEBUG)
+
     return logger
 
 
