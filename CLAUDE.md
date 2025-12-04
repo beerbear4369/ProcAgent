@@ -74,5 +74,64 @@ The MVP demonstrates a single Amine Treater (301-E) simulation:
 - Example script: `scripts/promax_301e_amine_treater.py`
 
 
+## Claude Agent SDK Integration
+
+### Windows Event Loop Issue
+
+**Problem:** Claude Agent SDK spawns `claude.exe` as a subprocess. Windows asyncio's default `SelectorEventLoop` does NOT support subprocess creation, causing `NotImplementedError`.
+
+**Solution:** Use `ProactorEventLoop` and configure uvicorn to not override it:
+
+```python
+# In app.py main()
+if sys.platform == 'win32':
+    loop = asyncio.ProactorEventLoop()
+    asyncio.set_event_loop(loop)
+
+    config = uvicorn.Config(
+        "procagent.server.app:app",
+        loop="none",  # Don't let uvicorn manage the loop
+        reload=False,  # Disable reload to keep single process
+    )
+    server = uvicorn.Server(config)
+    loop.run_until_complete(server.serve())
+```
+
+**Key points:**
+- Setting `asyncio.set_event_loop_policy()` at module level is NOT enough - uvicorn creates its own loop later
+- Must create loop BEFORE uvicorn starts and pass `loop="none"`
+- `reload=False` required to maintain single process with our event loop
+
+### MCP Server Configuration
+
+**Wrong:** Passing Python objects as a list
+```python
+# DON'T DO THIS
+options = ClaudeAgentOptions(
+    mcp_servers=[server1, server2],  # List of objects - WRONG
+)
+```
+
+**Correct:** Pass as dictionary with server names as keys
+```python
+# CORRECT
+options = ClaudeAgentOptions(
+    mcp_servers={
+        "promax": server,      # Dict with name as key
+        "computer": server2,
+    },
+    allowed_tools=["mcp__promax__connect_promax", ...],  # Must specify allowed tools
+)
+```
+
+### SDK Authentication
+
+Claude Agent SDK can authenticate via:
+1. **API Key:** Set `ANTHROPIC_API_KEY` environment variable
+2. **Max Subscription:** Run `claude.exe` to authenticate with browser OAuth
+
+The bundled CLI is at: `site-packages/claude_agent_sdk/_bundled/claude.exe`
+
 ## User instruction
--https://platform.claude.com/docs/en/agent-sdk/python refer to documents here and sample code here for claude agent SDK usage
+- https://platform.claude.com/docs/en/agent-sdk/python - Claude Agent SDK docs
+- Use Max subscription for development (no API costs)

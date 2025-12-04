@@ -5,10 +5,15 @@ Provides WebSocket chat endpoint and VNC proxy for browser-based interface.
 """
 
 import asyncio
+import sys
 import json
 import uuid
 from pathlib import Path
 from typing import Dict, Optional
+
+# Windows needs ProactorEventLoop for subprocess support (Claude Agent SDK)
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -208,16 +213,37 @@ async def download_file(session_id: str, filename: str):
 # ============================================================================
 
 def main():
-    """Run the server."""
+    """Run the server with proper Windows event loop for subprocess support."""
     import uvicorn
+
     settings = get_settings()
-    uvicorn.run(
-        "procagent.server.app:app",
-        host=settings.server.host,
-        port=settings.server.port,
-        reload=True,
-        log_level="info",
-    )
+
+    # Windows requires ProactorEventLoop for subprocess support (Claude Agent SDK)
+    if sys.platform == 'win32':
+        # Create ProactorEventLoop and set it as the running loop
+        loop = asyncio.ProactorEventLoop()
+        asyncio.set_event_loop(loop)
+
+        # Run uvicorn with the loop parameter (no reload to keep single process)
+        config = uvicorn.Config(
+            "procagent.server.app:app",
+            host=settings.server.host,
+            port=settings.server.port,
+            reload=False,  # Disable reload to use our event loop
+            log_level="info",
+            loop="none",  # Don't let uvicorn manage the loop
+        )
+        server = uvicorn.Server(config)
+        loop.run_until_complete(server.serve())
+    else:
+        # On non-Windows, use standard uvicorn
+        uvicorn.run(
+            "procagent.server.app:app",
+            host=settings.server.host,
+            port=settings.server.port,
+            reload=True,
+            log_level="info",
+        )
 
 
 if __name__ == "__main__":
