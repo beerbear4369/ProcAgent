@@ -8,8 +8,11 @@ This server is designed to be used as an in-process MCP server with the
 Claude Agent SDK.
 """
 
+import json
 import platform
 from typing import Any, Dict, List, Optional
+
+from claude_agent_sdk import tool, create_sdk_mcp_server
 
 from ..logging_config import get_logger
 
@@ -58,18 +61,6 @@ PHASE_PROPS = {
     "pressure": 1,     # Pa
     "molar_flow": 16,  # mol/s
     "mass_flow": 17,   # kg/s
-}
-
-# Block type to Visio stencil mapping
-BLOCK_TYPE_MAP = {
-    "AmineTreater": {"stencil": "Column.vss", "master": "Distill"},
-    "Separator": {"stencil": "Separators.vss", "master": "Separator-1"},
-    "HeatExchanger": {"stencil": "Heat Exchangers.vss", "master": "HX-1"},
-    "Compressor": {"stencil": "Rotating Equipment.vss", "master": "Compressor-1"},
-    "Pump": {"stencil": "Rotating Equipment.vss", "master": "Pump-1"},
-    "Valve": {"stencil": "Valves.vss", "master": "Valve-1"},
-    "Mixer": {"stencil": "Misc.vss", "master": "Mixer"},
-    "Splitter": {"stencil": "Misc.vss", "master": "Splitter"},
 }
 
 
@@ -142,557 +133,443 @@ def get_promax_state() -> ProMaxState:
     return _state
 
 
+def _result(text: str) -> dict:
+    """Helper to create MCP tool result format."""
+    return {"content": [{"type": "text", "text": text}]}
+
+
 # ============================================================================
-# MCP Tool Definitions
+# MCP Tool Definitions using @tool decorator
 # ============================================================================
 
-def create_promax_tools() -> Dict[str, callable]:
-    """
-    Create ProMax MCP tools dictionary.
+@tool(
+    "connect_promax",
+    "Initialize connection to ProMax COM API. MUST be called first before any other ProMax operation.",
+    {"with_gui": bool}
+)
+async def connect_promax_tool(args: dict) -> dict:
+    """Connect to ProMax COM server."""
+    state = get_promax_state()
+    try:
+        from win32com.client import gencache
 
-    Returns a dictionary of tool functions that can be registered
-    with the Claude Agent SDK.
-    """
+        with_gui = args.get("with_gui", True)
+
+        if with_gui:
+            state.pmx = gencache.EnsureDispatch("ProMax.ProMaxOutOfProc")
+            state.with_gui = True
+        else:
+            state.pmx = gencache.EnsureDispatch("ProMax.ProMax")
+            state.with_gui = False
+
+        version = f"{state.pmx.Version.Major}.{state.pmx.Version.Minor}"
+        mode = "GUI" if with_gui else "background"
+        logger.info(f"Connected to ProMax {version} ({mode} mode)")
+        return _result(f"Connected to ProMax {version} ({mode} mode)")
+
+    except Exception as e:
+        logger.error(f"Failed to connect to ProMax: {e}")
+        return _result(f"Error: Failed to connect to ProMax: {str(e)}")
+
+
+@tool(
+    "create_project",
+    "Create a new ProMax project with a flowsheet",
+    {"flowsheet_name": str}
+)
+async def create_project_tool(args: dict) -> dict:
+    """Create a new ProMax project."""
     state = get_promax_state()
 
-    async def connect_promax(with_gui: bool = True) -> str:
-        """
-        Initialize connection to ProMax COM API.
-        Must be called before any other ProMax operation.
-
-        Args:
-            with_gui: True for Visio GUI mode, False for background mode
-
-        Returns:
-            Connection status message
-        """
-        try:
-            import win32com.client
-            from win32com.client import gencache
-
-            if with_gui:
-                state.pmx = gencache.EnsureDispatch("ProMax.ProMaxOutOfProc")
-                state.with_gui = True
-            else:
-                state.pmx = gencache.EnsureDispatch("ProMax.ProMax")
-                state.with_gui = False
-
-            version = f"{state.pmx.Version.Major}.{state.pmx.Version.Minor}"
-            mode = "with GUI" if with_gui else "background"
-            logger.info(f"Connected to ProMax {version} ({mode} mode)")
-            return f"Connected to ProMax {version} ({mode} mode)"
-
-        except Exception as e:
-            logger.error(f"Failed to connect to ProMax: {e}")
-            return f"Failed to connect to ProMax: {str(e)}"
-
-    async def create_project(flowsheet_name: str = "Main") -> str:
-        """
-        Create a new ProMax project with a flowsheet.
-
-        Args:
-            flowsheet_name: Name for the new flowsheet
-
-        Returns:
-            Project creation status
-        """
-        if not state.is_connected:
-            return "Error: Not connected to ProMax. Call connect_promax first."
-
-        try:
-            state.project = state.pmx.New()
-            state.flowsheet = state.project.Flowsheets.Add(flowsheet_name)
-
-            if state.with_gui:
-                state.visio = state.pmx.VisioApp
-                state.vpage = state.flowsheet.VisioPage
-                # Load stencils
-                for i in range(1, state.visio.Documents.Count + 1):
-                    doc = state.visio.Documents(i)
-                    if doc.Type == 2:  # Stencil
-                        state.stencils[doc.Name] = doc
-
-            logger.info(f"Created project with flowsheet '{flowsheet_name}'")
-            return f"Created project with flowsheet '{flowsheet_name}'"
-
-        except Exception as e:
-            logger.error(f"Failed to create project: {e}")
-            return f"Failed to create project: {str(e)}"
-
-    async def add_flowsheet(name: str) -> str:
-        """
-        Add a new flowsheet to the current project.
-
-        Args:
-            name: Name for the new flowsheet
-
-        Returns:
-            Flowsheet creation status
-        """
-        if state.project is None:
-            return "Error: No project. Create or open a project first."
-
-        try:
-            state.flowsheet = state.project.Flowsheets.Add(name)
-            if state.with_gui:
-                state.vpage = state.flowsheet.VisioPage
-            logger.info(f"Created flowsheet: {name}")
-            return f"Created flowsheet: {name}"
-
-        except Exception as e:
-            logger.error(f"Failed to add flowsheet: {e}")
-            return f"Failed to add flowsheet: {str(e)}"
-
-    async def add_components(components: List[str]) -> str:
-        """
-        Add chemical components to the flowsheet environment.
-        Components must be added before setting stream compositions.
-
-        Args:
-            components: List of ProMax component names
-
-        Returns:
-            Addition status with success/failure counts
-        """
-        if not state.has_flowsheet:
-            return "Error: No flowsheet. Create or open a project first."
-
-        try:
-            env = state.flowsheet.Environment
-            added = []
-            failed = []
-
-            for comp in components:
-                try:
-                    env.Components.Add(comp)
-                    added.append(comp)
-                except Exception as e:
-                    failed.append(f"{comp}: {str(e)}")
-
-            result = f"Added {len(added)} components: {', '.join(added)}"
-            if failed:
-                result += f"\nFailed: {'; '.join(failed)}"
-
-            logger.info(result)
-            return result
-
-        except Exception as e:
-            logger.error(f"Failed to add components: {e}")
-            return f"Failed to add components: {str(e)}"
-
-    async def create_block(
-        block_type: str,
-        name: str,
-        x: float = 5.0,
-        y: float = 5.0
-    ) -> str:
-        """
-        Create an equipment block in the flowsheet.
-
-        Args:
-            block_type: Type of block (AmineTreater, Separator, etc.)
-            name: Name for the block
-            x: X position on Visio page (inches)
-            y: Y position on Visio page (inches)
-
-        Returns:
-            Block creation status
-        """
-        if not state.has_flowsheet:
-            return "Error: No flowsheet. Create or open a project first."
-
-        if block_type not in BLOCK_TYPE_MAP:
-            return f"Error: Unknown block type '{block_type}'. Valid types: {list(BLOCK_TYPE_MAP.keys())}"
-
-        try:
-            block_info = BLOCK_TYPE_MAP[block_type]
-
-            if state.with_gui and state.vpage:
-                stencil_name = block_info["stencil"]
-                if stencil_name not in state.stencils:
-                    return f"Error: Stencil '{stencil_name}' not loaded."
-
-                master = state.stencils[stencil_name].Masters(block_info["master"])
-                shape = state.vpage.Drop(master, x, y)
-                shape.Name = name
-                state.block_shapes[name] = shape
-
-                logger.info(f"Created {block_type} block '{name}' at ({x}, {y})")
-                return f"Created {block_type} block '{name}' with Visio shape at ({x}, {y})"
-            else:
-                # Background mode - blocks created via data API
-                blocks = state.flowsheet.Blocks
-                # Note: Background mode block creation varies by block type
-                logger.info(f"Created {block_type} block '{name}' (data only)")
-                return f"Created {block_type} block '{name}' (data only, no Visio shape)"
-
-        except Exception as e:
-            logger.error(f"Failed to create block: {e}")
-            return f"Failed to create block: {str(e)}"
-
-    async def create_stream(
-        name: str,
-        x: Optional[float] = None,
-        y: Optional[float] = None
-    ) -> str:
-        """
-        Create a new process stream in the flowsheet.
-
-        Args:
-            name: Name for the stream
-            x: X position on Visio page (inches)
-            y: Y position on Visio page (inches)
-
-        Returns:
-            Stream creation status
-        """
-        if not state.has_flowsheet:
-            return "Error: No flowsheet. Create or open a project first."
-
-        try:
-            if state.with_gui and state.vpage:
-                stencil_name = "Streams.vss"
-                if stencil_name not in state.stencils:
-                    return f"Error: Stencil '{stencil_name}' not loaded."
-
-                x_pos = x if x is not None else 2.0
-                y_pos = y if y is not None else 5.0
-
-                master = state.stencils[stencil_name].Masters("Process Stream")
-                shape = state.vpage.Drop(master, x_pos, y_pos)
-                shape.Name = name
-                state.stream_shapes[name] = shape
-
-                logger.info(f"Created stream '{name}' at ({x_pos}, {y_pos})")
-                return f"Created stream '{name}' with Visio shape at ({x_pos}, {y_pos})"
-            else:
-                stream = state.flowsheet.PStreams.Add(name)
-                logger.info(f"Created stream '{name}' (data only)")
-                return f"Created stream '{name}' (data only)"
-
-        except Exception as e:
-            logger.error(f"Failed to create stream: {e}")
-            return f"Failed to create stream: {str(e)}"
-
-    async def connect_stream(
-        stream_name: str,
-        block_name: str,
-        port_index: int,
-        is_inlet: bool = True
-    ) -> str:
-        """
-        Connect a stream to a block port.
-
-        Args:
-            stream_name: Name of the stream
-            block_name: Name of the block
-            port_index: Port index on the block
-            is_inlet: True for inlet, False for outlet
-
-        Returns:
-            Connection status
-        """
-        if not state.has_flowsheet:
-            return "Error: No flowsheet. Create or open a project first."
-
-        try:
-            if state.with_gui:
-                if stream_name not in state.stream_shapes:
-                    return f"Error: Stream '{stream_name}' not found."
-                if block_name not in state.block_shapes:
-                    return f"Error: Block '{block_name}' not found."
-
-                stream_shape = state.stream_shapes[stream_name]
-                block_shape = state.block_shapes[block_name]
-
-                # Get connection cell on block
-                conn_cell = block_shape.CellsSRC(1, 1, port_index)
-
-                # Connect stream end to block
-                if is_inlet:
-                    stream_shape.CellsU("EndX").GlueTo(conn_cell)
-                else:
-                    stream_shape.CellsU("BeginX").GlueTo(conn_cell)
-
-                direction = "inlet" if is_inlet else "outlet"
-                logger.info(f"Connected stream '{stream_name}' to block '{block_name}' port {port_index} ({direction})")
-                return f"Connected stream '{stream_name}' to block '{block_name}' port {port_index} ({direction})"
-            else:
-                return "Stream connection in background mode not fully implemented"
-
-        except Exception as e:
-            logger.error(f"Failed to connect stream: {e}")
-            return f"Failed to connect stream: {str(e)}"
-
-    async def set_stream_properties(
-        stream_name: str,
-        temperature_c: Optional[float] = None,
-        pressure_kpa: Optional[float] = None,
-        molar_flow_kmol_hr: Optional[float] = None,
-        mass_flow_kg_hr: Optional[float] = None
-    ) -> str:
-        """
-        Set physical properties of a process stream.
-
-        Args:
-            stream_name: Name of the stream
-            temperature_c: Temperature in Celsius
-            pressure_kpa: Pressure in kPa
-            molar_flow_kmol_hr: Molar flow in kmol/hr
-            mass_flow_kg_hr: Mass flow in kg/hr
-
-        Returns:
-            Property setting status
-        """
-        if not state.has_flowsheet:
-            return "Error: No flowsheet. Create or open a project first."
-
-        try:
-            stream = state.flowsheet.PStreams(stream_name)
-            phase = stream.Phases(PMX_TOTAL_PHASE)
-            set_props = []
-
-            if temperature_c is not None:
-                temp_k = convert_units(temperature_c, "C", "temperature")
-                phase.Properties(PHASE_PROPS["temperature"]).Value = temp_k
-                set_props.append(f"T={temperature_c}°C")
-
-            if pressure_kpa is not None:
-                pres_pa = convert_units(pressure_kpa, "kPa", "pressure")
-                phase.Properties(PHASE_PROPS["pressure"]).Value = pres_pa
-                set_props.append(f"P={pressure_kpa}kPa")
-
-            if molar_flow_kmol_hr is not None:
-                flow_si = convert_units(molar_flow_kmol_hr, "kmol/hr", "flow")
-                phase.Properties(PHASE_PROPS["molar_flow"]).Value = flow_si
-                set_props.append(f"F={molar_flow_kmol_hr}kmol/hr")
-
-            if mass_flow_kg_hr is not None:
-                flow_si = convert_units(mass_flow_kg_hr, "kg/hr", "flow")
-                phase.Properties(PHASE_PROPS["mass_flow"]).Value = flow_si
-                set_props.append(f"F={mass_flow_kg_hr}kg/hr")
-
-            result = f"Set {stream_name} properties: {', '.join(set_props)}"
-            logger.info(result)
-            return result
-
-        except Exception as e:
-            logger.error(f"Failed to set stream properties: {e}")
-            return f"Failed to set stream properties: {str(e)}"
-
-    async def set_stream_composition(
-        stream_name: str,
-        composition: Dict[str, float]
-    ) -> str:
-        """
-        Set the mole fraction composition of a stream.
-        Composition values must sum to 1.0.
-
-        Args:
-            stream_name: Name of the stream
-            composition: Dict of component name to mole fraction
-
-        Returns:
-            Composition setting status
-        """
-        if not state.has_flowsheet:
-            return "Error: No flowsheet. Create or open a project first."
+    if not state.is_connected:
+        return _result("Error: Not connected to ProMax. Call connect_promax first.")
+
+    try:
+        flowsheet_name = args.get("flowsheet_name", "Main")
+        state.project = state.pmx.New()
+        state.flowsheet = state.project.Flowsheets.Add(flowsheet_name)
+
+        if state.with_gui:
+            state.visio = state.pmx.VisioApp
+            state.vpage = state.flowsheet.VisioPage
+            # Load stencils
+            for i in range(1, state.visio.Documents.Count + 1):
+                doc = state.visio.Documents(i)
+                if doc.Type == 2:  # Stencil
+                    state.stencils[doc.Name] = doc
+
+        logger.info(f"Created project with flowsheet '{flowsheet_name}'")
+        return _result(f"Created project with flowsheet '{flowsheet_name}'")
+
+    except Exception as e:
+        logger.error(f"Failed to create project: {e}")
+        return _result(f"Error: Failed to create project: {str(e)}")
+
+
+@tool(
+    "add_components",
+    "Add chemical components to the flowsheet environment. Components must be added before setting stream compositions.",
+    {"components": list}
+)
+async def add_components_tool(args: dict) -> dict:
+    """Add components to environment."""
+    state = get_promax_state()
+
+    if not state.has_flowsheet:
+        return _result("Error: No flowsheet. Create a project first.")
+
+    try:
+        components = args.get("components", [])
+
+        # Normalize: if string, convert to list
+        if isinstance(components, str):
+            components = [components]
+
+        env = state.flowsheet.Environment
+        added = []
+        failed = []
+
+        for comp in components:
+            try:
+                env.Components.Add(comp)
+                added.append(comp)
+            except Exception as e:
+                failed.append(f"{comp}: {str(e)}")
+
+        result = f"Added {len(added)} components: {', '.join(added)}"
+        if failed:
+            result += f"\nFailed: {'; '.join(failed)}"
+
+        logger.info(result)
+        return _result(result)
+
+    except Exception as e:
+        logger.error(f"Failed to add components: {e}")
+        return _result(f"Error: Failed to add components: {str(e)}")
+
+
+@tool(
+    "create_stream",
+    "Create a new process stream in the flowsheet",
+    {"name": str, "x": float, "y": float}
+)
+async def create_stream_tool(args: dict) -> dict:
+    """Create a process stream."""
+    state = get_promax_state()
+
+    if not state.has_flowsheet:
+        return _result("Error: No flowsheet. Create a project first.")
+
+    try:
+        name = args.get("name")
+        x = args.get("x", 2.0)
+        y = args.get("y", 5.0)
+
+        if state.with_gui and state.vpage:
+            stencil_name = "Streams.vss"
+            if stencil_name not in state.stencils:
+                return _result(f"Error: Stencil '{stencil_name}' not loaded.")
+
+            master = state.stencils[stencil_name].Masters("Process Stream")
+            shape = state.vpage.Drop(master, x, y)
+            shape.Name = name
+            state.stream_shapes[name] = shape
+
+            logger.info(f"Created stream '{name}' at ({x}, {y})")
+            return _result(f"Created stream '{name}' with Visio shape at ({x}, {y})")
+        else:
+            state.flowsheet.CreatePStream(name)
+            logger.info(f"Created stream '{name}' (data only)")
+            return _result(f"Created stream '{name}' (data only)")
+
+    except Exception as e:
+        logger.error(f"Failed to create stream: {e}")
+        return _result(f"Error: Failed to create stream: {str(e)}")
+
+
+@tool(
+    "set_stream_properties",
+    "Set physical properties of a process stream (temperature, pressure, flow rate)",
+    {"stream_name": str, "temperature_c": float, "pressure_kpa": float, "molar_flow_kmol_hr": float}
+)
+async def set_stream_properties_tool(args: dict) -> dict:
+    """Set stream properties."""
+    state = get_promax_state()
+
+    if not state.has_flowsheet:
+        return _result("Error: No flowsheet. Create a project first.")
+
+    try:
+        name = args.get("stream_name")
+        stream = state.flowsheet.PStreams(name)
+        phase = stream.Phases(PMX_TOTAL_PHASE)
+        set_props = []
+
+        if "temperature_c" in args and args["temperature_c"] is not None:
+            temp_k = convert_units(args["temperature_c"], "C", "temperature")
+            phase.Properties(PHASE_PROPS["temperature"]).Value = temp_k
+            set_props.append(f"T={args['temperature_c']}°C")
+
+        if "pressure_kpa" in args and args["pressure_kpa"] is not None:
+            pres_pa = convert_units(args["pressure_kpa"], "kPa", "pressure")
+            phase.Properties(PHASE_PROPS["pressure"]).Value = pres_pa
+            set_props.append(f"P={args['pressure_kpa']}kPa")
+
+        if "molar_flow_kmol_hr" in args and args["molar_flow_kmol_hr"] is not None:
+            flow_si = convert_units(args["molar_flow_kmol_hr"], "kmol/hr", "flow")
+            phase.Properties(PHASE_PROPS["molar_flow"]).Value = flow_si
+            set_props.append(f"F={args['molar_flow_kmol_hr']}kmol/hr")
+
+        result = f"Set {name} properties: {', '.join(set_props)}"
+        logger.info(result)
+        return _result(result)
+
+    except Exception as e:
+        logger.error(f"Failed to set stream properties: {e}")
+        return _result(f"Error: Failed to set stream properties: {str(e)}")
+
+
+@tool(
+    "set_stream_composition",
+    "Set the mole fraction composition of a stream. Composition values must sum to 1.0.",
+    {"stream_name": str, "composition": dict}
+)
+async def set_stream_composition_tool(args: dict) -> dict:
+    """Set stream composition."""
+    state = get_promax_state()
+
+    if not state.has_flowsheet:
+        return _result("Error: No flowsheet. Create a project first.")
+
+    try:
+        name = args.get("stream_name")
+        composition = args.get("composition", {})
 
         # Validate composition sums to 1.0
         total = sum(composition.values())
         if abs(total - 1.0) > 0.001:
-            return f"Error: Composition must sum to 1.0, got {total:.4f}"
+            return _result(f"Error: Composition must sum to 1.0, got {total:.4f}")
 
-        try:
-            stream = state.flowsheet.PStreams(stream_name)
-            env = state.flowsheet.Environment
-            n_comps = env.Components.Count
+        stream = state.flowsheet.PStreams(name)
+        env = state.flowsheet.Environment
+        n_comps = env.Components.Count
 
-            if n_comps == 0:
-                return "Error: No components in environment. Add components first."
+        if n_comps == 0:
+            return _result("Error: No components in environment. Add components first.")
 
-            # Get environment component names in order
-            env_comp_names = []
-            for i in range(n_comps):
-                try:
-                    comp = env.Components(i)
-                    pmx_name = comp.Species.SpeciesName.Name
-                    env_comp_names.append(pmx_name)
-                except Exception:
-                    env_comp_names.append(f"Component_{i}")
-
-            # Build composition array matching environment order
-            comp_values = [0.0] * n_comps
-            matched = []
-            unmatched = []
-
-            for name, value in composition.items():
-                found = False
-                for i, pmx_name in enumerate(env_comp_names):
-                    if name.lower() == pmx_name.lower():
-                        comp_values[i] = value
-                        matched.append(name)
-                        found = True
-                        break
-                if not found:
-                    unmatched.append(name)
-
-            # Set composition
-            phase = stream.Phases(PMX_TOTAL_PHASE)
-            comp_obj = phase.Composition(PMX_MOLAR_FRAC_BASIS)
-            comp_obj.SIValues = tuple(comp_values)
-
-            result = f"Set {stream_name} composition ({len(matched)} components)"
-            if unmatched:
-                result += f"\nWarning: Unmatched components: {', '.join(unmatched)}"
-
-            logger.info(result)
-            return result
-
-        except Exception as e:
-            logger.error(f"Failed to set composition: {e}")
-            return f"Failed to set composition: {str(e)}"
-
-    async def flash_stream(stream_name: str) -> str:
-        """
-        Flash a stream to establish thermodynamic equilibrium.
-        Call after setting temperature, pressure, and composition.
-
-        Args:
-            stream_name: Name of the stream to flash
-
-        Returns:
-            Flash calculation status
-        """
-        if not state.has_flowsheet:
-            return "Error: No flowsheet. Create or open a project first."
-
-        try:
-            stream = state.flowsheet.PStreams(stream_name)
-            stream.Flash()
-            logger.info(f"Flash completed for stream '{stream_name}'")
-            return f"Flash calculation completed for '{stream_name}'"
-
-        except Exception as e:
-            logger.error(f"Flash failed: {e}")
-            return f"Flash calculation failed: {str(e)}"
-
-    async def run_simulation() -> str:
-        """
-        Run the flowsheet solver.
-
-        Returns:
-            Solver status with convergence information
-        """
-        if not state.has_flowsheet:
-            return "Error: No flowsheet. Create or open a project first."
-
-        try:
-            solver = state.flowsheet.Solver
-            solver.Solve()
-
-            status_code = solver.LastSolverExecStatus
-            if status_code >= 1:
-                logger.info("Simulation converged")
-                return "Simulation converged successfully"
-            else:
-                logger.warning(f"Simulation did not converge. Status: {status_code}")
-                return f"Simulation did not converge. Status code: {status_code}"
-
-        except Exception as e:
-            logger.error(f"Simulation failed: {e}")
-            return f"Simulation failed: {str(e)}"
-
-    async def get_results(stream_names: List[str]) -> Dict[str, Any]:
-        """
-        Get simulation results for specified streams.
-
-        Args:
-            stream_names: List of stream names to get results for
-
-        Returns:
-            Dictionary of stream results
-        """
-        if not state.has_flowsheet:
-            return {"error": "No flowsheet. Create or open a project first."}
-
-        results = {}
-        for name in stream_names:
+        # Get environment component names in order
+        env_comp_names = []
+        for i in range(n_comps):
             try:
-                stream = state.flowsheet.PStreams(name)
-                phase = stream.Phases(PMX_TOTAL_PHASE)
+                comp = env.Components(i)
+                pmx_name = comp.Species.SpeciesName.Name
+                env_comp_names.append(pmx_name)
+            except Exception:
+                env_comp_names.append(f"Component_{i}")
 
-                temp_k = phase.Properties(PHASE_PROPS["temperature"]).Value
-                pres_pa = phase.Properties(PHASE_PROPS["pressure"]).Value
-                molar_flow = phase.Properties(PHASE_PROPS["molar_flow"]).Value
+        # Build composition array matching environment order (case-insensitive)
+        comp_values = [0.0] * n_comps
+        matched = []
+        unmatched = []
 
-                results[name] = {
-                    "temperature_c": temp_k - 273.15 if temp_k else None,
-                    "pressure_kpa": pres_pa / 1000 if pres_pa else None,
-                    "molar_flow_kmol_hr": molar_flow * 3600 / 1000 if molar_flow else None,
-                }
-            except Exception as e:
-                results[name] = {"error": str(e)}
+        for user_name, value in composition.items():
+            found = False
+            for i, pmx_name in enumerate(env_comp_names):
+                if user_name.lower() == pmx_name.lower():
+                    comp_values[i] = value
+                    matched.append(user_name)
+                    found = True
+                    break
+            if not found:
+                unmatched.append(user_name)
 
-        logger.info(f"Retrieved results for {len(stream_names)} streams")
-        return results
+        # Set composition
+        phase = stream.Phases(PMX_TOTAL_PHASE)
+        comp_obj = phase.Composition(PMX_MOLAR_FRAC_BASIS)
+        comp_obj.SIValues = tuple(comp_values)
 
-    async def save_project(file_path: str) -> str:
-        """
-        Save the current project to a file.
+        result = f"Set {name} composition ({len(matched)} components)"
+        if unmatched:
+            result += f"\nWarning: Unmatched components: {', '.join(unmatched)}"
 
-        Args:
-            file_path: Full path to save the .prx file
+        logger.info(result)
+        return _result(result)
 
-        Returns:
-            Save status
-        """
-        if state.project is None:
-            return "Error: No project to save."
+    except Exception as e:
+        logger.error(f"Failed to set composition: {e}")
+        return _result(f"Error: Failed to set composition: {str(e)}")
 
-        try:
-            state.project.SaveAs(file_path)
-            logger.info(f"Project saved to: {file_path}")
-            return f"Project saved to: {file_path}"
 
-        except Exception as e:
-            logger.error(f"Failed to save project: {e}")
-            return f"Failed to save project: {str(e)}"
+@tool(
+    "flash_stream",
+    "Flash a stream to establish thermodynamic equilibrium. Call after setting T, P, and composition.",
+    {"stream_name": str}
+)
+async def flash_stream_tool(args: dict) -> dict:
+    """Flash a stream."""
+    state = get_promax_state()
 
-    async def close_project() -> str:
-        """
-        Close the current ProMax project.
+    if not state.has_flowsheet:
+        return _result("Error: No flowsheet. Create a project first.")
 
-        Returns:
-            Close status
-        """
-        if state.project is None:
-            return "No project to close."
+    try:
+        name = args.get("stream_name")
+        stream = state.flowsheet.PStreams(name)
+        stream.Flash()
+        logger.info(f"Flash completed for stream '{name}'")
+        return _result(f"Flash calculation completed for '{name}'")
 
-        try:
-            state.project.Close()
-            state.reset()
-            logger.info("Project closed")
-            return "Project closed successfully"
+    except Exception as e:
+        logger.error(f"Flash failed: {e}")
+        return _result(f"Error: Flash calculation failed: {str(e)}")
 
-        except Exception as e:
-            logger.error(f"Failed to close project: {e}")
-            return f"Failed to close project: {str(e)}"
 
-    # Return tool dictionary
-    return {
-        "connect_promax": connect_promax,
-        "create_project": create_project,
-        "add_flowsheet": add_flowsheet,
-        "add_components": add_components,
-        "create_block": create_block,
-        "create_stream": create_stream,
-        "connect_stream": connect_stream,
-        "set_stream_properties": set_stream_properties,
-        "set_stream_composition": set_stream_composition,
-        "flash_stream": flash_stream,
-        "run_simulation": run_simulation,
-        "get_results": get_results,
-        "save_project": save_project,
-        "close_project": close_project,
-    }
+@tool(
+    "get_stream_results",
+    "Get simulation results for a stream (temperature, pressure, flow, vapor fraction)",
+    {"stream_name": str}
+)
+async def get_stream_results_tool(args: dict) -> dict:
+    """Get stream results."""
+    state = get_promax_state()
+
+    if not state.has_flowsheet:
+        return _result("Error: No flowsheet. Create a project first.")
+
+    try:
+        name = args.get("stream_name")
+        stream = state.flowsheet.PStreams(name)
+        phase = stream.Phases(PMX_TOTAL_PHASE)
+
+        temp_k = phase.Properties(PHASE_PROPS["temperature"]).Value
+        pres_pa = phase.Properties(PHASE_PROPS["pressure"]).Value
+        molar_flow = phase.Properties(PHASE_PROPS["molar_flow"]).Value
+
+        results = {
+            "stream_name": name,
+            "temperature_c": temp_k - 273.15 if temp_k else None,
+            "pressure_kpa": pres_pa / 1000 if pres_pa else None,
+            "molar_flow_kmol_hr": molar_flow * 3600 / 1000 if molar_flow else None,
+        }
+
+        logger.info(f"Retrieved results for stream '{name}'")
+        return _result(json.dumps(results, indent=2))
+
+    except Exception as e:
+        logger.error(f"Failed to get stream results: {e}")
+        return _result(f"Error: Failed to get stream results: {str(e)}")
+
+
+@tool(
+    "run_simulation",
+    "Run the flowsheet solver to calculate all blocks and streams",
+    {}
+)
+async def run_simulation_tool(args: dict) -> dict:
+    """Run flowsheet solver."""
+    state = get_promax_state()
+
+    if not state.has_flowsheet:
+        return _result("Error: No flowsheet. Create a project first.")
+
+    try:
+        solver = state.flowsheet.Solver
+        solver.Solve()
+
+        status_code = solver.LastSolverExecStatus
+        if status_code >= 1:
+            logger.info("Simulation converged")
+            return _result("Simulation converged successfully")
+        else:
+            logger.warning(f"Simulation did not converge. Status: {status_code}")
+            return _result(f"Simulation did not converge. Status code: {status_code}")
+
+    except Exception as e:
+        logger.error(f"Simulation failed: {e}")
+        return _result(f"Error: Simulation failed: {str(e)}")
+
+
+@tool(
+    "save_project",
+    "Save the current project to a .pmx file",
+    {"filepath": str}
+)
+async def save_project_tool(args: dict) -> dict:
+    """Save project to file."""
+    state = get_promax_state()
+
+    if state.project is None:
+        return _result("Error: No project to save.")
+
+    try:
+        filepath = args.get("filepath")
+        state.project.SaveAs(filepath)
+        logger.info(f"Project saved to: {filepath}")
+        return _result(f"Project saved to: {filepath}")
+
+    except Exception as e:
+        logger.error(f"Failed to save project: {e}")
+        return _result(f"Error: Failed to save project: {str(e)}")
+
+
+@tool(
+    "close_project",
+    "Close the current ProMax project",
+    {}
+)
+async def close_project_tool(args: dict) -> dict:
+    """Close project."""
+    state = get_promax_state()
+
+    if state.project is None:
+        return _result("No project to close.")
+
+    try:
+        state.project.Close()
+        state.reset()
+        logger.info("Project closed")
+        return _result("Project closed successfully")
+
+    except Exception as e:
+        logger.error(f"Failed to close project: {e}")
+        return _result(f"Error: Failed to close project: {str(e)}")
+
+
+# ============================================================================
+# MCP Server Creation
+# ============================================================================
+
+def create_promax_mcp_server():
+    """Create the ProMax MCP server with all tools."""
+    return create_sdk_mcp_server(
+        name="promax",
+        tools=[
+            connect_promax_tool,
+            create_project_tool,
+            add_components_tool,
+            create_stream_tool,
+            set_stream_properties_tool,
+            set_stream_composition_tool,
+            flash_stream_tool,
+            get_stream_results_tool,
+            run_simulation_tool,
+            save_project_tool,
+            close_project_tool,
+        ]
+    )
+
+
+# List of allowed MCP tools
+ALLOWED_TOOLS = [
+    "mcp__promax__connect_promax",
+    "mcp__promax__create_project",
+    "mcp__promax__add_components",
+    "mcp__promax__create_stream",
+    "mcp__promax__set_stream_properties",
+    "mcp__promax__set_stream_composition",
+    "mcp__promax__flash_stream",
+    "mcp__promax__get_stream_results",
+    "mcp__promax__run_simulation",
+    "mcp__promax__save_project",
+    "mcp__promax__close_project",
+]
