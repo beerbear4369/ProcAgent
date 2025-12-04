@@ -1,7 +1,7 @@
 """
-ProcAgent Core - Claude Agent SDK Integration (Minimal, No MCP)
+ProcAgent Core - Claude Agent SDK Integration
 
-Simplified version without custom MCP servers for testing.
+Uses ClaudeSDKClient for multi-turn conversations with session history.
 """
 
 import asyncio
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from claude_agent_sdk import (
-    query,
+    ClaudeSDKClient,
     ClaudeAgentOptions,
     AssistantMessage,
     SystemMessage,
@@ -36,18 +36,19 @@ from ..models import (
 logger = get_logger("agent.core")
 
 
-# Simple system prompt for testing
 SYSTEM_PROMPT = """You are ProcAgent, an AI copilot for chemical process simulation.
 
 Be helpful and concise. When asked about ProMax or simulations, explain that
 custom tools are being configured and will be available soon.
+
+You maintain conversation history, so you can refer back to previous messages.
 """
 
 
 class ProcAgentCore:
     """
-    Core orchestrator using Claude Agent SDK with streaming.
-    Minimal version without custom MCP servers.
+    Core orchestrator using Claude Agent SDK with ClaudeSDKClient.
+    Maintains session history across multiple messages.
     """
 
     def __init__(
@@ -60,30 +61,53 @@ class ProcAgentCore:
         self.settings = get_settings()
         self.targets: List[PerformanceTarget] = []
 
+        # SDK client options
+        self.options = ClaudeAgentOptions(
+            system_prompt=SYSTEM_PROMPT,
+            max_turns=10,
+        )
+
+        # Client instance (created on first message)
+        self._client: Optional[ClaudeSDKClient] = None
+        self._client_started = False
+
         logger.info(f"ProcAgentCore initialized for session {session_id}")
+
+    async def _ensure_client(self) -> ClaudeSDKClient:
+        """Ensure client is created and started."""
+        if self._client is None:
+            self._client = ClaudeSDKClient(options=self.options)
+
+        if not self._client_started:
+            await self._client.__aenter__()
+            self._client_started = True
+            logger.info(f"ClaudeSDKClient started for session {self.session_id}")
+
+        return self._client
 
     async def process_message(
         self,
         message: ChatMessage,
     ) -> AsyncIterator[AgentResponse]:
         """
-        Process a user message with streaming using Claude Agent SDK.
+        Process a user message with streaming.
+        Uses ClaudeSDKClient to maintain conversation history.
         """
         prompt = message.message
 
         if message.stream_data:
             prompt = f"Stream data:\n```json\n{json.dumps(message.stream_data, indent=2)}\n```\n\n{prompt}"
 
-        # Simple options without MCP
-        options = ClaudeAgentOptions(
-            system_prompt=SYSTEM_PROMPT,
-            max_turns=3,
-        )
-
         try:
-            async for msg in query(prompt=prompt, options=options):
+            client = await self._ensure_client()
+
+            # Send query to existing session
+            await client.query(prompt)
+
+            # Stream responses
+            async for msg in client.receive_response():
                 if isinstance(msg, SystemMessage):
-                    logger.info(f"Session started: {msg.data.get('session_id', 'unknown')}")
+                    logger.info(f"SDK session: {msg.data.get('session_id', 'unknown')}")
                     yield AgentResponse(
                         type=ResponseType.STATUS,
                         status=f"Connected to Claude ({msg.data.get('model', 'unknown')})"
@@ -147,4 +171,14 @@ class ProcAgentCore:
         )
 
     async def cleanup(self) -> None:
+        """Clean up resources and close SDK client."""
         logger.info(f"Cleaning up session {self.session_id}")
+        if self._client and self._client_started:
+            try:
+                await self._client.__aexit__(None, None, None)
+                logger.info(f"ClaudeSDKClient closed for session {self.session_id}")
+            except Exception as e:
+                logger.warning(f"Error closing client: {e}")
+            finally:
+                self._client = None
+                self._client_started = False
