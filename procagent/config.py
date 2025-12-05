@@ -28,6 +28,8 @@ class VNCConfig(BaseModel):
     port: int = 5900
     password: str = "procagent"
     websockify_port: int = 6080
+    novnc_path: str = "./procagent/web/novnc"
+    auto_start_websockify: bool = True
 
 
 class AgentConfig(BaseModel):

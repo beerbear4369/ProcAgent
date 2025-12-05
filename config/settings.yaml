@@ -5,12 +5,14 @@ server:
   host: "127.0.0.1"
   port: 8000
 
-# VNC settings (TightVNC must be pre-running)
+# VNC settings (TightVNC must be pre-running on port 5900)
 vnc:
   host: "127.0.0.1"
   port: 5900
   password: "procagent"
   websockify_port: 6080
+  novnc_path: "./procagent/web/novnc"
+  auto_start_websockify: true
 
 # Claude Agent SDK settings
 agent:

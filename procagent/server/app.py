@@ -8,6 +8,7 @@ import asyncio
 import sys
 import json
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -24,16 +25,50 @@ from ..config import get_settings
 from ..logging_config import setup_logging, get_logger
 from ..agent.core import ProcAgentCore
 from ..models import ChatMessage, AgentResponse, ResponseType
+from .vnc_manager import get_websockify_manager
 
 # Initialize logging
 setup_logging()
 logger = get_logger("server.app")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Manage application lifecycle.
+
+    On startup: Start websockify for VNC WebSocket proxy (if configured).
+    On shutdown: Stop websockify subprocess.
+    """
+    settings = get_settings()
+    manager = get_websockify_manager()
+
+    # Startup
+    if settings.vnc.auto_start_websockify:
+        logger.info("Starting websockify for VNC proxy...")
+        if not manager.start():
+            logger.warning(
+                "Failed to start websockify - VNC viewer may not work. "
+                "Ensure noVNC is downloaded to %s",
+                settings.vnc.novnc_path,
+            )
+    else:
+        logger.info("websockify auto-start disabled (vnc.auto_start_websockify=false)")
+
+    yield  # Server runs here
+
+    # Shutdown
+    if manager.is_running():
+        logger.info("Stopping websockify...")
+        manager.stop()
+
 
 # Create FastAPI app
 app = FastAPI(
     title="ProcAgent",
     description="AI copilot for chemical process simulation using ProMax",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # CORS middleware for localhost access
