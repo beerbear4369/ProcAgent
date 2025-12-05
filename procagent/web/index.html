@@ -519,8 +519,9 @@
             fetch(`/vnc/${sessionId}`)
                 .then(response => response.json())
                 .then(info => {
-                    // Connect via noVNC
-                    const vncUrl = `http://${info.host}:${info.websockify_port}/vnc.html?autoconnect=true&password=${info.password}`;
+                    // Connect via noVNC - use current hostname for remote access support
+                    const vncHost = window.location.hostname;
+                    const vncUrl = `http://${vncHost}:${info.websockify_port}/vnc.html?autoconnect=true&password=${info.password}`;
                     vncFrame.src = vncUrl;
                     vncFrame.style.display = 'block';
                     vncPlaceholder.style.display = 'none';

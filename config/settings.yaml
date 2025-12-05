@@ -2,7 +2,7 @@
 
 # Server settings
 server:
-  host: "127.0.0.1"
+  host: "0.0.0.0"  # Bind to all interfaces for remote access
   port: 8000
 
 # VNC settings (TightVNC must be pre-running on port 5900)

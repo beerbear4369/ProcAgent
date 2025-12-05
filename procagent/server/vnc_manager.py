@@ -50,14 +50,15 @@ class WebsockifyManager:
             return False
 
         # Build websockify command
-        # websockify --web=<novnc_path> <listen_port> <vnc_host>:<vnc_port>
+        # websockify --web=<novnc_path> [listen_addr:]<listen_port> <vnc_host>:<vnc_port>
+        # Bind to 0.0.0.0 for remote access, proxy to local TightVNC
         cmd = [
             sys.executable,
             "-m",
             "websockify",
             f"--web={novnc_path}",
-            str(vnc_config.websockify_port),
-            f"{vnc_config.host}:{vnc_config.port}",
+            f"0.0.0.0:{vnc_config.websockify_port}",  # Listen on all interfaces
+            f"{vnc_config.host}:{vnc_config.port}",   # Proxy to local TightVNC
         ]
 
         logger.info("Starting websockify: %s", " ".join(cmd))
