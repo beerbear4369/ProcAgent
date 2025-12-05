@@ -27,3 +27,9 @@ promax:
 logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Authentication settings
+auth:
+  username: "procagent"
+  password: "changeme123"  # Change this to a secure password
+  session_timeout: 86400  # 24 hours in seconds

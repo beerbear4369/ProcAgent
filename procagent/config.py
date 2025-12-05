@@ -49,6 +49,13 @@ class LoggingConfig(BaseModel):
     format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 
+class AuthConfig(BaseModel):
+    """Authentication configuration."""
+    username: str = "procagent"
+    password: str = "procagent"
+    session_timeout: int = 86400  # 24 hours in seconds
+
+
 class Settings(BaseModel):
     """Application settings."""
     server: ServerConfig = Field(default_factory=ServerConfig)
@@ -56,6 +63,7 @@ class Settings(BaseModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     promax: ProMaxConfig = Field(default_factory=ProMaxConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
     @classmethod
     def load(cls, config_path: Optional[Path] = None) -> "Settings":
@@ -88,6 +96,10 @@ class Settings(BaseModel):
             pass
         if os.getenv("PROCAGENT_LOG_LEVEL"):
             config_data.setdefault("logging", {})["level"] = os.getenv("PROCAGENT_LOG_LEVEL")
+        if os.getenv("PROCAGENT_AUTH_USERNAME"):
+            config_data.setdefault("auth", {})["username"] = os.getenv("PROCAGENT_AUTH_USERNAME")
+        if os.getenv("PROCAGENT_AUTH_PASSWORD"):
+            config_data.setdefault("auth", {})["password"] = os.getenv("PROCAGENT_AUTH_PASSWORD")
 
         return cls(**config_data)
 

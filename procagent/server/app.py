@@ -15,9 +15,12 @@ from typing import Dict, Optional
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+import secrets
+import time
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Cookie, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from ..config import get_settings
@@ -48,6 +51,9 @@ app.add_middleware(
 # Session storage
 sessions: Dict[str, ProcAgentCore] = {}
 
+# Authentication session storage (token -> expiry timestamp)
+auth_sessions: Dict[str, float] = {}
+
 
 # ============================================================================
 # Static file serving
@@ -60,8 +66,36 @@ if web_dir.exists():
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root():
-    """Serve the main HTML page."""
+async def root(session: Optional[str] = Cookie(None)):
+    """Serve login page or redirect to app if authenticated."""
+    # Check if authenticated
+    if session and session in auth_sessions and time.time() < auth_sessions[session]:
+        return RedirectResponse(url="/app", status_code=302)
+
+    # Serve login page
+    login_path = web_dir / "login.html"
+    if login_path.exists():
+        return FileResponse(login_path)
+    return HTMLResponse(content="""
+    <!DOCTYPE html>
+    <html>
+    <head><title>ProcAgent - Login</title></head>
+    <body>
+        <h1>ProcAgent</h1>
+        <p>Login page not found. Please ensure procagent/web/login.html exists.</p>
+    </body>
+    </html>
+    """)
+
+
+@app.get("/app", response_class=HTMLResponse)
+async def app_page(session: Optional[str] = Cookie(None)):
+    """Serve the main application (requires auth)."""
+    # Check authentication
+    if not session or session not in auth_sessions or time.time() >= auth_sessions[session]:
+        return RedirectResponse(url="/", status_code=302)
+
+    # Serve main app
     index_path = web_dir / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
@@ -89,6 +123,61 @@ async def health_check():
         "version": "0.1.0",
         "sessions": len(sessions)
     }
+
+
+# ============================================================================
+# Authentication endpoints
+# ============================================================================
+
+@app.post("/api/login")
+async def login(
+    response: Response,
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    """Authenticate user and create session."""
+    settings = get_settings()
+
+    if username == settings.auth.username and password == settings.auth.password:
+        # Create session token
+        session_token = secrets.token_urlsafe(32)
+        expiry = time.time() + settings.auth.session_timeout
+        auth_sessions[session_token] = expiry
+
+        # Set cookie
+        response.set_cookie(
+            key="session",
+            value=session_token,
+            httponly=True,
+            max_age=settings.auth.session_timeout
+        )
+        logger.info(f"User logged in: {username}")
+        return {"success": True, "redirect": "/app"}
+
+    logger.warning(f"Failed login attempt for user: {username}")
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
+@app.post("/api/logout")
+async def logout(response: Response, session: Optional[str] = Cookie(None)):
+    """Clear user session."""
+    if session and session in auth_sessions:
+        del auth_sessions[session]
+        logger.info("User logged out")
+    response.delete_cookie("session")
+    return {"success": True, "redirect": "/"}
+
+
+@app.get("/api/auth/status")
+async def auth_status(session: Optional[str] = Cookie(None)):
+    """Check if user is authenticated."""
+    if session and session in auth_sessions:
+        if time.time() < auth_sessions[session]:
+            return {"authenticated": True}
+        else:
+            # Session expired, clean up
+            del auth_sessions[session]
+    return {"authenticated": False}
 
 
 # ============================================================================

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo:*)",
+      "Bash(cat:*)",
+      "Bash(powershell -ExecutionPolicy Bypass -File:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

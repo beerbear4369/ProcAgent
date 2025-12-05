@@ -519,8 +519,9 @@
             fetch(`/vnc/${sessionId}`)
                 .then(response => response.json())
                 .then(info => {
-                    // Connect via noVNC
-                    const vncUrl = `http://${info.host}:${info.websockify_port}/vnc.html?autoconnect=true&password=${info.password}`;
+                    // Connect via noVNC through nginx proxy
+                    // Use relative path /novnc/ instead of direct port access for public exposure
+                    const vncUrl = `/novnc/vnc.html?autoconnect=true&password=${encodeURIComponent(info.password)}&path=vnc-ws/`;
                     vncFrame.src = vncUrl;
                     vncFrame.style.display = 'block';
                     vncPlaceholder.style.display = 'none';
@@ -530,7 +531,23 @@
                 });
         }
 
+        // Check authentication on load
+        function checkAuth() {
+            fetch('/api/auth/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.authenticated) {
+                        // Redirect to login if not authenticated
+                        window.location.href = '/';
+                    }
+                })
+                .catch(error => {
+                    console.error('Auth check failed:', error);
+                });
+        }
+
         // Initialize
+        checkAuth();
         connect();
     </script>
 </body>
