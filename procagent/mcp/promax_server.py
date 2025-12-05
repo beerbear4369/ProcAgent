@@ -222,8 +222,12 @@ async def add_components_tool(args: dict) -> dict:
         components = args.get("components", [])
 
         # Normalize: if string, convert to list
+        # Handle comma-separated string: "Hydrogen, Water, Methane"
         if isinstance(components, str):
-            components = [components]
+            if ',' in components:
+                components = [c.strip() for c in components.split(',')]
+            else:
+                components = [components]
 
         env = state.flowsheet.Environment
         added = []
@@ -344,6 +348,10 @@ async def set_stream_composition_tool(args: dict) -> dict:
     try:
         name = args.get("stream_name")
         composition = args.get("composition", {})
+
+        # Handle JSON string: Claude sometimes sends "{\"Hydrogen\": 0.446}"
+        if isinstance(composition, str):
+            composition = json.loads(composition)
 
         # Validate composition sums to 1.0
         total = sum(composition.values())

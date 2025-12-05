@@ -135,3 +135,4 @@ The bundled CLI is at: `site-packages/claude_agent_sdk/_bundled/claude.exe`
 ## User instruction
 - https://platform.claude.com/docs/en/agent-sdk/python - Claude Agent SDK docs
 - Use Max subscription for development (no API costs)
+- after finish a fix or function, always test it end to end with backend server and use playwright mcp to input in the UI
