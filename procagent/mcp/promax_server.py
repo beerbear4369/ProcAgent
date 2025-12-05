@@ -355,9 +355,18 @@ async def set_stream_composition_tool(args: dict) -> dict:
         name = args.get("stream_name")
         composition = args.get("composition", {})
 
-        # Handle JSON string: Claude sometimes sends "{\"Hydrogen\": 0.446}"
+        # Handle various string formats Claude might send
         if isinstance(composition, str):
-            composition = json.loads(composition)
+            # Try JSON first: "{\"Hydrogen\": 0.446}"
+            if composition.strip().startswith('{'):
+                composition = json.loads(composition)
+            else:
+                # Handle key=value format: "Methane=0.70, Ethane=0.15"
+                composition = dict(
+                    item.split('=') for item in composition.split(',')
+                )
+                # Convert string values to float
+                composition = {k.strip(): float(v) for k, v in composition.items()}
 
         # Validate composition sums to 1.0
         total = sum(composition.values())
