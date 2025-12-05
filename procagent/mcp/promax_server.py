@@ -549,6 +549,235 @@ async def close_project_tool(args: dict) -> dict:
         return _result(f"Error: Failed to close project: {str(e)}")
 
 
+@tool(
+    "open_project",
+    "Open an existing ProMax project file (.pmx)",
+    {"filepath": str}
+)
+async def open_project_tool(args: dict) -> dict:
+    """Open an existing ProMax project."""
+    state = get_promax_state()
+
+    if not state.is_connected:
+        return _result("Error: Not connected to ProMax. Call connect_promax first.")
+
+    try:
+        filepath = args.get("filepath")
+        state.project = state.pmx.Open(filepath)
+
+        # Get first flowsheet if exists
+        if state.project.Flowsheets.Count > 0:
+            state.flowsheet = state.project.Flowsheets(0)
+
+            if state.with_gui:
+                state.visio = state.pmx.VisioApp
+                state.vpage = state.flowsheet.VisioPage
+                # Load stencils
+                for i in range(1, state.visio.Documents.Count + 1):
+                    doc = state.visio.Documents(i)
+                    if doc.Type == 2:  # Stencil
+                        state.stencils[doc.Name] = doc
+
+        logger.info(f"Opened project: {filepath}")
+        return _result(f"Opened project: {filepath} (flowsheets: {state.project.Flowsheets.Count})")
+
+    except Exception as e:
+        logger.error(f"Failed to open project: {e}")
+        return _result(f"Error: Failed to open project: {str(e)}")
+
+
+# Block type constants (pmxBlockTypesEnum)
+BLOCK_TYPES = {
+    "separator": 12,        # pmxSeparatorBlock
+    "staged_column": 15,    # pmxStagedColumnBlock (Amine Treater, Distillation)
+    "mixer": 5,             # pmxMixerSplitterBlock
+    "pump": 9,              # pmxPumpBlock
+    "compressor": 0,        # pmxCompExpBlock
+    "heat_exchanger": 13,   # pmxSSHEXBlock (Shell & Tube)
+    "valve": 3,             # pmxJTValveBlock
+    "reactor": 18,          # pmxReactorBlock
+    "divider": 2,           # pmxDividerBlock
+    "pipeline": 7,          # pmxPipelineBlock
+}
+
+# Stencil and master shape mappings for GUI mode
+BLOCK_STENCILS = {
+    "separator": ("Separators.vss", "2 Phase Separator - Vertical"),
+    "separator_3phase": ("Separators.vss", "3 Phase Separator"),
+    "staged_column": ("Column.vss", "Distill"),
+    "mixer": ("Mixer.vss", "Mixer"),
+    "pump": ("Fluid Drivers.vss", "Centrifugal Pump"),
+    "compressor": ("Fluid Drivers.vss", "Compressor"),
+    "heat_exchanger": ("Exchangers.vss", "Shell and Tube Exchanger"),
+    "valve": ("Valves.vss", "JT Valve"),
+}
+
+
+@tool(
+    "create_block",
+    "Create a unit operation block (separator, column, mixer, pump, etc.). Canvas is 297mm x 210mm. Position in mm.",
+    {"block_type": str, "name": str, "x": float, "y": float}
+)
+async def create_block_tool(args: dict) -> dict:
+    """Create a unit operation block."""
+    state = get_promax_state()
+
+    if not state.has_flowsheet:
+        return _result("Error: No flowsheet. Create a project first.")
+
+    try:
+        block_type = args.get("block_type", "separator").lower()
+        name = args.get("name")
+        # Default to center of canvas
+        x = args.get("x", 150.0)
+        y = args.get("y", 105.0)
+
+        if state.with_gui and state.vpage:
+            # GUI mode: Drop shape from stencil
+            if block_type not in BLOCK_STENCILS:
+                available = ", ".join(BLOCK_STENCILS.keys())
+                return _result(f"Error: Unknown block type '{block_type}'. Available: {available}")
+
+            stencil_name, master_name = BLOCK_STENCILS[block_type]
+            if stencil_name not in state.stencils:
+                return _result(f"Error: Stencil '{stencil_name}' not loaded.")
+
+            # Convert mm to inches for Visio
+            x_inches = x / 25.4
+            y_inches = y / 25.4
+
+            master = state.stencils[stencil_name].Masters(master_name)
+            shape = state.vpage.Drop(master, x_inches, y_inches)
+
+            # ProMax auto-generates block name, but we track the shape
+            block_name = shape.Name
+            state.block_shapes[block_name] = shape
+
+            # Also track by user-provided name for connection convenience
+            if name:
+                state.block_shapes[name] = shape
+
+            logger.info(f"Created {block_type} block '{block_name}' at ({x}, {y}) mm")
+            return _result(f"Created {block_type} block '{block_name}' at ({x}, {y}) mm")
+        else:
+            # Background mode: Create block via COM API
+            if block_type not in BLOCK_TYPES:
+                available = ", ".join(BLOCK_TYPES.keys())
+                return _result(f"Error: Unknown block type '{block_type}'. Available: {available}")
+
+            type_id = BLOCK_TYPES[block_type]
+            block = state.flowsheet.Blocks.Add(type_id, name)
+            logger.info(f"Created {block_type} block '{name}' (data only)")
+            return _result(f"Created {block_type} block '{name}' (data only)")
+
+    except Exception as e:
+        logger.error(f"Failed to create block: {e}")
+        return _result(f"Error: Failed to create block: {str(e)}")
+
+
+@tool(
+    "connect_stream",
+    "Connect a stream to a block inlet or outlet. Connection points: 1=left/feed, 2=top/vapor, 3=bottom/liquid, etc.",
+    {"stream_name": str, "block_name": str, "connection_point": int, "is_inlet": bool}
+)
+async def connect_stream_tool(args: dict) -> dict:
+    """Connect a stream to a block using Visio GlueTo."""
+    state = get_promax_state()
+
+    if not state.has_flowsheet:
+        return _result("Error: No flowsheet. Create a project first.")
+
+    if not state.with_gui:
+        return _result("Error: Stream connections require GUI mode (with_gui=true)")
+
+    try:
+        stream_name = args.get("stream_name")
+        block_name = args.get("block_name")
+        connection_point = args.get("connection_point", 1)
+        is_inlet = args.get("is_inlet", True)
+
+        # Get stream shape
+        if stream_name not in state.stream_shapes:
+            return _result(f"Error: Stream '{stream_name}' not found. Create it first.")
+        stream_shape = state.stream_shapes[stream_name]
+
+        # Get block shape
+        if block_name not in state.block_shapes:
+            return _result(f"Error: Block '{block_name}' not found. Create it first.")
+        block_shape = state.block_shapes[block_name]
+
+        # Connect using Visio GlueTo method
+        # Inlet streams: Glue stream END to block connection point
+        # Outlet streams: Glue stream BEGIN from block connection point
+        connection_cell = f"Connections.X{connection_point}"
+
+        if is_inlet:
+            stream_shape.Cells("EndX").GlueTo(block_shape.Cells(connection_cell))
+            direction = "inlet"
+        else:
+            stream_shape.Cells("BeginX").GlueTo(block_shape.Cells(connection_cell))
+            direction = "outlet"
+
+        logger.info(f"Connected stream '{stream_name}' to block '{block_name}' point {connection_point} as {direction}")
+        return _result(f"Connected '{stream_name}' to '{block_name}' (point {connection_point}, {direction})")
+
+    except Exception as e:
+        logger.error(f"Failed to connect stream: {e}")
+        return _result(f"Error: Failed to connect stream: {str(e)}")
+
+
+@tool(
+    "list_streams",
+    "List all process streams in the current flowsheet",
+    {}
+)
+async def list_streams_tool(args: dict) -> dict:
+    """List all streams in the flowsheet."""
+    state = get_promax_state()
+
+    if not state.has_flowsheet:
+        return _result("Error: No flowsheet. Create a project first.")
+
+    try:
+        streams = []
+        for i in range(state.flowsheet.PStreams.Count):
+            stream = state.flowsheet.PStreams(i)
+            streams.append(stream.Name)
+
+        logger.info(f"Listed {len(streams)} streams")
+        return _result(f"Streams ({len(streams)}): {', '.join(streams)}" if streams else "No streams in flowsheet")
+
+    except Exception as e:
+        logger.error(f"Failed to list streams: {e}")
+        return _result(f"Error: Failed to list streams: {str(e)}")
+
+
+@tool(
+    "list_blocks",
+    "List all blocks (unit operations) in the current flowsheet",
+    {}
+)
+async def list_blocks_tool(args: dict) -> dict:
+    """List all blocks in the flowsheet."""
+    state = get_promax_state()
+
+    if not state.has_flowsheet:
+        return _result("Error: No flowsheet. Create a project first.")
+
+    try:
+        blocks = []
+        for i in range(state.flowsheet.Blocks.Count):
+            block = state.flowsheet.Blocks(i)
+            blocks.append(f"{block.Name} ({block.Type})")
+
+        logger.info(f"Listed {len(blocks)} blocks")
+        return _result(f"Blocks ({len(blocks)}): {', '.join(blocks)}" if blocks else "No blocks in flowsheet")
+
+    except Exception as e:
+        logger.error(f"Failed to list blocks: {e}")
+        return _result(f"Error: Failed to list blocks: {str(e)}")
+
+
 # ============================================================================
 # MCP Server Creation
 # ============================================================================
@@ -560,12 +789,17 @@ def create_promax_mcp_server():
         tools=[
             connect_promax_tool,
             create_project_tool,
+            open_project_tool,
             add_components_tool,
             create_stream_tool,
+            create_block_tool,
+            connect_stream_tool,
             set_stream_properties_tool,
             set_stream_composition_tool,
             flash_stream_tool,
             get_stream_results_tool,
+            list_streams_tool,
+            list_blocks_tool,
             run_simulation_tool,
             save_project_tool,
             close_project_tool,
@@ -577,12 +811,17 @@ def create_promax_mcp_server():
 ALLOWED_TOOLS = [
     "mcp__promax__connect_promax",
     "mcp__promax__create_project",
+    "mcp__promax__open_project",
     "mcp__promax__add_components",
     "mcp__promax__create_stream",
+    "mcp__promax__create_block",
+    "mcp__promax__connect_stream",
     "mcp__promax__set_stream_properties",
     "mcp__promax__set_stream_composition",
     "mcp__promax__flash_stream",
     "mcp__promax__get_stream_results",
+    "mcp__promax__list_streams",
+    "mcp__promax__list_blocks",
     "mcp__promax__run_simulation",
     "mcp__promax__save_project",
     "mcp__promax__close_project",
