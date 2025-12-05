@@ -254,7 +254,7 @@ async def add_components_tool(args: dict) -> dict:
 
 @tool(
     "create_stream",
-    "Create a new process stream in the flowsheet",
+    "Create a new process stream in the flowsheet. Canvas is 297mm x 210mm (A4 landscape). Position x=0-297, y=0-210.",
     {"name": str, "x": float, "y": float}
 )
 async def create_stream_tool(args: dict) -> dict:
@@ -266,21 +266,27 @@ async def create_stream_tool(args: dict) -> dict:
 
     try:
         name = args.get("name")
-        x = args.get("x", 2.0)
-        y = args.get("y", 5.0)
+        # Canvas is 297mm x 210mm (A4 landscape). Default to left-center region for feed streams.
+        x = args.get("x", 50.0)
+        y = args.get("y", 105.0)
 
         if state.with_gui and state.vpage:
             stencil_name = "Streams.vss"
             if stencil_name not in state.stencils:
                 return _result(f"Error: Stencil '{stencil_name}' not loaded.")
 
+            # Convert mm to inches for Visio Drop() method
+            # Visio uses inches internally, not the page's display units
+            x_inches = x / 25.4
+            y_inches = y / 25.4
+
             master = state.stencils[stencil_name].Masters("Process Stream")
-            shape = state.vpage.Drop(master, x, y)
+            shape = state.vpage.Drop(master, x_inches, y_inches)
             shape.Name = name
             state.stream_shapes[name] = shape
 
-            logger.info(f"Created stream '{name}' at ({x}, {y})")
-            return _result(f"Created stream '{name}' with Visio shape at ({x}, {y})")
+            logger.info(f"Created stream '{name}' at ({x}, {y}) mm = ({x_inches:.2f}, {y_inches:.2f}) inches")
+            return _result(f"Created stream '{name}' with Visio shape at ({x}, {y}) mm")
         else:
             state.flowsheet.CreatePStream(name)
             logger.info(f"Created stream '{name}' (data only)")
