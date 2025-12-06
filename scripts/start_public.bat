@@ -32,22 +32,32 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr :6080 ^| findstr LISTENING') 
 )
 
 echo.
-echo [1/4] Starting websockify (for noVNC)...
+:: Check if TightVNC is already running
+tasklist /FI "IMAGENAME eq tvnserver.exe" 2>NUL | find /I /N "tvnserver.exe">NUL
+if "%ERRORLEVEL%"=="0" (
+    echo [1/5] TightVNC already running, skipping...
+) else (
+    echo [1/5] Starting TightVNC Server...
+    start "" "C:\Program Files\TightVNC\tvnserver.exe" -run
+    timeout /t 2 >nul
+)
+
+echo [2/5] Starting websockify (for noVNC)...
 cd /d D:\dev\ProcAgent
 start "ProcAgent-websockify" cmd /k "python -m websockify 6080 localhost:5900"
 timeout /t 2 >nul
 
-echo [2/4] Starting FastAPI server...
+echo [3/5] Starting FastAPI server...
 cd /d D:\dev\ProcAgent
 start "ProcAgent-FastAPI" cmd /k "python -m procagent.server.app"
 timeout /t 3 >nul
 
-echo [3/4] Starting nginx...
+echo [4/5] Starting nginx...
 cd /d C:\nginx
 start "" nginx.exe
 timeout /t 2 >nul
 
-echo [4/4] Getting public IP...
+echo [5/5] Getting public IP...
 echo.
 for /f %%i in ('curl -s ifconfig.me') do set PUBLIC_IP=%%i
 
@@ -59,8 +69,6 @@ echo   Public URL:  http://%PUBLIC_IP%/
 echo   Local URL:   http://localhost/
 echo.
 echo   Login: Check config/settings.yaml
-echo.
-echo   NOTE: TightVNC Server must be running on port 5900
 echo.
 echo ==========================================
 echo.
