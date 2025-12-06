@@ -8,7 +8,7 @@ echo.
 call C:\ProgramData\Anaconda3\Scripts\activate.bat
 
 :: Change to project directory
-cd /d D:\dev\ProcAgent-nginx
+cd /d D:\dev\ProcAgent
 
 :: Check if nginx is already running
 tasklist /FI "IMAGENAME eq nginx.exe" 2>NUL | find /I /N "nginx.exe">NUL
@@ -25,18 +25,29 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000 ^| findstr LISTENING') 
     taskkill /F /PID %%a >nul 2>&1
 )
 
+:: Kill any existing websockify on port 6080
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :6080 ^| findstr LISTENING') do (
+    echo [!] Killing existing process on port 6080...
+    taskkill /F /PID %%a >nul 2>&1
+)
+
 echo.
-echo [1/3] Starting FastAPI server...
-cd /d D:\dev\ProcAgent-nginx
+echo [1/4] Starting websockify (for noVNC)...
+cd /d D:\dev\ProcAgent
+start "ProcAgent-websockify" cmd /k "python -m websockify 6080 localhost:5900"
+timeout /t 2 >nul
+
+echo [2/4] Starting FastAPI server...
+cd /d D:\dev\ProcAgent
 start "ProcAgent-FastAPI" cmd /k "python -m procagent.server.app"
 timeout /t 3 >nul
 
-echo [2/3] Starting nginx...
+echo [3/4] Starting nginx...
 cd /d C:\nginx
 start "" nginx.exe
 timeout /t 2 >nul
 
-echo [3/3] Getting public IP...
+echo [4/4] Getting public IP...
 echo.
 for /f %%i in ('curl -s ifconfig.me') do set PUBLIC_IP=%%i
 
@@ -48,6 +59,8 @@ echo   Public URL:  http://%PUBLIC_IP%/
 echo   Local URL:   http://localhost/
 echo.
 echo   Login: Check config/settings.yaml
+echo.
+echo   NOTE: TightVNC Server must be running on port 5900
 echo.
 echo ==========================================
 echo.
