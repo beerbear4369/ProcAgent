@@ -132,6 +132,42 @@ Claude Agent SDK can authenticate via:
 
 The bundled CLI is at: `site-packages/claude_agent_sdk/_bundled/claude.exe`
 
+## nginx Public Exposure
+
+To expose ProcAgent to the public internet:
+
+### Quick Start
+```powershell
+# Start FastAPI backend
+python -m procagent.server.app
+
+# Start nginx (in another terminal)
+cd C:\nginx
+.\nginx.exe
+```
+
+### Architecture
+```
+Internet → F620 Router (port 80) → PC (192.168.10.2) → nginx (80) → FastAPI (8000)
+```
+
+### Key Files
+- `C:\nginx\conf\nginx.conf` - nginx reverse proxy config
+- `config/nginx.conf` - Source config (copy to C:\nginx\conf\)
+- `config/settings.yaml` - Auth credentials (username/password)
+- `procagent/web/login.html` - Login page
+- `docs/nginx-public-setup.md` - Full setup guide
+
+### Router Port Forwarding (ZTE F620)
+- Security → Port Forwarding
+- LAN Host: PC's IP (e.g., 192.168.10.2)
+- WAN Port: 80 → LAN Port: 80
+
+### Windows Firewall
+```powershell
+New-NetFirewallRule -DisplayName "nginx HTTP" -Direction Inbound -LocalPort 80 -Protocol TCP -Action Allow
+```
+
 ## User instruction
 - https://platform.claude.com/docs/en/agent-sdk/python - Claude Agent SDK docs
 - Use Max subscription for development (no API costs)
