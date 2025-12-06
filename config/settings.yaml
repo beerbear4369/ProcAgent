@@ -33,6 +33,5 @@ logging:
 # Authentication settings
 auth:
   username: "procagent"
-  password: "procagent123“
-"  # Change this to a secure password
+  password: "procagent123"
   session_timeout: 86400  # 24 hours in seconds
