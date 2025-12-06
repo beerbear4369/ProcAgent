@@ -83,7 +83,7 @@ class Settings(BaseModel):
 
         config_data: Dict[str, Any] = {}
         if config_path and config_path.exists():
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config_data = yaml.safe_load(f) or {}
 
         # Override with environment variables
